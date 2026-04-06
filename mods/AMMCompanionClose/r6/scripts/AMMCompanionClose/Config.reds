@@ -6,6 +6,10 @@ module AMMCompanionClose
 
 public abstract class CompanionCloseConfig {
 
+    // =====================================================================
+    //  Close-Follow Settings
+    // =====================================================================
+
     // --- Distance thresholds (metres) ---
 
     // When the companion is further than this, they are teleported next to you.
@@ -38,4 +42,37 @@ public abstract class CompanionCloseConfig {
     // Default: F6  (IK_F6).  Change to any EInputKey value you prefer.
     //   IK_F5, IK_F6, IK_F7, IK_F8, IK_Numpad0 ... IK_Numpad9, etc.
     public static func ToggleKey() -> EInputKey = EInputKey.IK_F6
+
+    // =====================================================================
+    //  Voice Line Settings  (new in v1.0.1)
+    // =====================================================================
+
+    // --- Talk hotkey ---
+
+    // The key that triggers "talk to nearest companion".
+    // Default: F7  (IK_F7).  Press while near an AMM-spawned NPC.
+    public static func TalkKey() -> EInputKey = EInputKey.IK_F7
+
+    // --- Cooldown ---
+
+    // Minimum seconds between voice lines for the same NPC.
+    // Prevents spamming the same NPC with greetings.
+    public static func VoiceCooldown() -> Float = 8.0
+
+    // --- Max interaction distance ---
+
+    // How close you need to be (metres) to talk to a companion.
+    // NPCs further than this are ignored by "talk to nearest".
+    public static func VoiceMaxDistance() -> Float = 12.0
+
+    // --- Voice line duration ---
+
+    // How long (seconds) the facial animation stays active after triggering.
+    // After this, the NPC's expression resets to neutral.
+    public static func VoiceLineDuration() -> Float = 4.0
+
+    // --- Look-at duration ---
+
+    // How long (seconds) the NPC looks at the player after being talked to.
+    public static func VoiceLookAtDuration() -> Float = 5.0
 }

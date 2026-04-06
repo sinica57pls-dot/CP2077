@@ -1,14 +1,12 @@
-# AMM Companion Close-Follow
+# AMM Companion Close-Follow + Voice Lines
 
-Makes AMM-spawned companions (and any dynamically spawned NPCs) actually **follow you closely** instead of standing still or slowly drifting behind.
+Makes AMM-spawned companions (and any dynamically spawned NPCs) actually **follow you closely** and **talk with voice lines** from the game.
 
-## The Problem
+## Features
 
-When you spawn an NPC in AMM and set them as a companion, the built-in companion distance settings (`Close`, `Default`, `Distance`) still leave the NPC standing around until you move *very* far away. They don't really track you in real-time -- they feel more like statues than companions.
+### Close-Follow (F6)
 
-## The Solution
-
-This mod adds a toggleable **close-follow mode** that:
+When toggled ON, every AMM companion stays right next to you:
 
 | Situation | What happens |
 |-----------|-------------|
@@ -16,7 +14,18 @@ This mod adds a toggleable **close-follow mode** that:
 | Companion is **3 - 15 m** away | **Smooth movement** toward you every 0.25 s |
 | Companion is **< 3 m** away | **Nothing** -- they're close enough, personal space respected |
 
-Press **F6** to toggle it on/off at any time.
+### Voice Lines (F7) -- *New in v1.0.1*
+
+Press **F7** near any AMM-spawned NPC to make them:
+
+1. **Turn to look at you** -- the NPC turns their head/body to face V
+2. **Speak a voice line** -- a random line from the game's built-in voice bank for that NPC archetype
+3. **Show a facial expression** -- randomized talking/smiling/reacting animations
+4. **Reset naturally** -- expression returns to neutral after a few seconds
+
+Each NPC archetype has its own voice bank, so the same companion will say different things each time. There's an 8-second cooldown per NPC to prevent spam.
+
+You can also trigger voice lines from the CET overlay with the **"Talk to Nearest Companion"** button.
 
 ## Installation
 
@@ -40,6 +49,7 @@ Cyberpunk 2077/
     Module.reds
     Config.reds
     CompanionCloseSystem.reds
+    CompanionVoiceSystem.reds        <-- NEW in v1.0.1
   bin/x64/plugins/cyber_engine_tweaks/mods/AMMCompanionClose/
     init.lua
 ```
@@ -50,15 +60,21 @@ Cyberpunk 2077/
 2. Open AMM and spawn an NPC companion
 3. Press **F6** to enable close-follow mode
 4. Walk/run/drive around -- the companion stays right behind you
-5. Press **F6** again to disable
+5. Press **F7** near a companion to make them talk to you
+6. Press **F6** / **F7** again as needed
 
 ### CET Overlay
 
-Open the CET overlay (`~` key) and you'll see a **Companion Close-Follow** window with a toggle button and status display.
+Open the CET overlay (`~` key) and you'll see a **Companion Close-Follow + Voice** window with:
+- A toggle button for close-follow (ON/OFF)
+- A **"Talk to Nearest Companion"** button
+- Status display and hotkey reminders
 
 ## Configuration
 
 Edit `r6/scripts/AMMCompanionClose/Config.reds` to change:
+
+### Close-Follow Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -67,38 +83,81 @@ Edit `r6/scripts/AMMCompanionClose/Config.reds` to change:
 | `TargetDistance` | `1.8` | How close to V the NPC ends up |
 | `TickInterval` | `0.25` | Seconds between position checks (lower = smoother) |
 | `LerpFactor` | `0.45` | How fast the smooth movement is (0-1, higher = faster) |
-| `ToggleKey` | `IK_F6` | Which key toggles the feature |
+| `ToggleKey` | `IK_F6` | Which key toggles close-follow |
+
+### Voice Line Settings (v1.0.1)
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `TalkKey` | `IK_F7` | Which key triggers "talk to nearest" |
+| `VoiceCooldown` | `8.0` | Seconds between voice lines per NPC |
+| `VoiceMaxDistance` | `12.0` | Max distance (m) to detect companions for talking |
+| `VoiceLineDuration` | `4.0` | How long facial animation plays before reset |
+| `VoiceLookAtDuration` | `5.0` | How long the NPC looks at you after talking |
 
 ## For Mod Authors
 
-Other mods can interact with this system via redscript:
+Other mods can interact with both systems via Redscript:
 
 ```swift
-// Get the system
-let sys = GameInstance.GetScriptableSystemsContainer()
+// Get the close-follow system
+let followSys = GameInstance.GetScriptableSystemsContainer()
     .Get(n"AMMCompanionClose.CompanionCloseSystem")
     as AMMCompanionClose.CompanionCloseSystem;
 
-// Toggle programmatically
-sys.SetEnabled(true);
-sys.SetEnabled(false);
+// Toggle close-follow programmatically
+followSys.SetEnabled(true);
+followSys.SetEnabled(false);
+let on: Bool = followSys.IsEnabled();
 
-// Check state
-let on: Bool = sys.IsEnabled();
+// Register custom entity tags
+followSys.RegisterTag(n"MyModCompanions");
 
-// Register custom entity tags (if your mod uses its own tags)
-sys.RegisterTag(n"MyModCompanions");
+// Get the voice system
+let voiceSys = GameInstance.GetScriptableSystemsContainer()
+    .Get(n"AMMCompanionClose.CompanionVoiceSystem")
+    as AMMCompanionClose.CompanionVoiceSystem;
+
+// Make the nearest companion talk
+voiceSys.TalkToNearest();
+
+// Talk to a specific entity
+voiceSys.TalkToEntity(someEntity);
 ```
+
+## Changelog
+
+### v1.0.1
+- **NEW:** Voice line system -- press F7 to make companions talk
+- **NEW:** Random voice lines from the game's native audio system
+- **NEW:** Random facial animations (talking, smiling, reacting)
+- **NEW:** Per-NPC cooldown system to prevent voice spam
+- **NEW:** "Talk to Nearest Companion" button in CET overlay
+- **NEW:** CompanionVoiceSystem Redscript API for mod integration
+- **FIX:** NPCs no longer snap-rotate to face north after teleport (orientation preserved)
+- **FIX:** DynamicEntitySystem reference now refreshes after session transitions
+- **FIX:** Entity system stale reference check added to tick loop
+
+### v1.0.0
+- Initial release
+- Close-follow system with teleport + lerp movement
+- F6 hotkey toggle
+- CET overlay with enable/disable button
 
 ## How It Works
 
-The mod uses Codeware's `ScriptableSystem` to register:
+### Close-Follow
+Uses Codeware's `ScriptableSystem` with a `DelayCallback` tick (4 Hz). Each tick scans all entities tagged with AMM/Companion tags via `DynamicEntitySystem`, then either teleports (> 15m) or lerp-moves (3-15m) them toward V. Preserves NPC orientation during movement.
 
-1. **Input callback** on F6 → toggles the feature
-2. **DelayCallback tick** every 0.25 s → checks every dynamic entity's distance to V
-3. **SetWorldTransform** → smoothly moves or teleports NPCs that are too far
+### Voice Lines
+A second `ScriptableSystem` handles voice interactions. When triggered (F7 or overlay button), it:
+1. Finds the nearest AMM-tagged entity within 12m
+2. Activates `ReactionManagerComponent.ActivateReactionLookAt` for NPC-to-player facing
+3. Calls `GameObject.PlayVoiceOver` with a randomly selected VO event
+4. Applies `AnimFeature_FacialReaction` via `AnimationControllerComponent` for expressive animation
+5. Schedules a `DelayCallback` to reset the facial animation after the line finishes
 
-It scans for entities tagged with common AMM/Codeware tags (`AMM`, `Companion`, etc.) and repositions them. It does **not** modify any game files or override any existing AMM behavior -- it's purely additive.
+The voice lines come from the game's Wwise audio system -- each NPC archetype has its own bank of greeting/reaction audio, so the same VO event produces different spoken dialogue depending on the NPC.
 
 ## License
 

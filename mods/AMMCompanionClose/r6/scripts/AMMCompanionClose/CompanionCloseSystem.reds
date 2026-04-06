@@ -103,6 +103,12 @@ public class CompanionCloseSystem extends ScriptableSystem {
         // Skip main menu
         if GameInstance.GetSystemRequestsHandler().IsPreGame() { return; }
 
+        // BUG FIX: Refresh entity system reference -- it may not have been
+        // ready during OnAttach (e.g. after a save load or session transition)
+        if !IsDefined(this.m_entitySystem) {
+            this.m_entitySystem = GameInstance.GetDynamicEntitySystem();
+        }
+
         this.m_active = true;
 
         FTLog("[CompanionClose] System ready. Press F6 to toggle close-follow.");
@@ -178,6 +184,10 @@ public class CompanionCloseSystem extends ScriptableSystem {
     // ------------------------------------------------------------------
 
     private func UpdateAllCompanions(playerPos: Vector4, playerFwd: Vector4) -> Void {
+        // Refresh entity system if reference went stale (e.g. session transition)
+        if !IsDefined(this.m_entitySystem) {
+            this.m_entitySystem = GameInstance.GetDynamicEntitySystem();
+        }
         if !IsDefined(this.m_entitySystem) { return; }
 
         // Default tags that AMM and Codeware commonly use
@@ -295,8 +305,11 @@ public class CompanionCloseSystem extends ScriptableSystem {
         transform.Position.y = Cast(pos.Y);
         transform.Position.z = Cast(pos.Z);
 
-        // Keep the NPC's current orientation so they don't snap-rotate
-        // (WorldTransform default Orientation is identity quaternion which is fine)
+        // BUG FIX: Preserve the NPC's current facing direction.
+        // Previously used identity quaternion (default), which snapped NPCs
+        // to face north on every teleport. Now we copy their current orientation
+        // so they keep facing the direction they were before the teleport.
+        transform.Orientation = entity.GetWorldOrientation();
 
         entity.SetWorldTransform(transform);
     }
