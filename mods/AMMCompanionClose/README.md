@@ -1,0 +1,105 @@
+# AMM Companion Close-Follow
+
+Makes AMM-spawned companions (and any dynamically spawned NPCs) actually **follow you closely** instead of standing still or slowly drifting behind.
+
+## The Problem
+
+When you spawn an NPC in AMM and set them as a companion, the built-in companion distance settings (`Close`, `Default`, `Distance`) still leave the NPC standing around until you move *very* far away. They don't really track you in real-time -- they feel more like statues than companions.
+
+## The Solution
+
+This mod adds a toggleable **close-follow mode** that:
+
+| Situation | What happens |
+|-----------|-------------|
+| Companion is **> 15 m** away | **Instant teleport** right behind you |
+| Companion is **3 - 15 m** away | **Smooth movement** toward you every 0.25 s |
+| Companion is **< 3 m** away | **Nothing** -- they're close enough, personal space respected |
+
+Press **F6** to toggle it on/off at any time.
+
+## Installation
+
+### Requirements
+- [Cyber Engine Tweaks](https://www.nexusmods.com/cyberpunk2077/mods/107) 1.37+
+- [RED4ext](https://www.nexusmods.com/cyberpunk2077/mods/2380) 1.29+
+- [Redscript](https://www.nexusmods.com/cyberpunk2077/mods/1511) 0.5.31+
+- [Codeware](https://www.nexusmods.com/cyberpunk2077/mods/7780) 1.19+
+- [Appearance Menu Mod (AMM)](https://www.nexusmods.com/cyberpunk2077/mods/790) (to spawn companions)
+
+### Steps
+
+1. Copy the `r6/` folder into your Cyberpunk 2077 game directory
+2. Copy the `bin/` folder into your Cyberpunk 2077 game directory
+3. Launch the game
+
+Your file structure should look like:
+```
+Cyberpunk 2077/
+  r6/scripts/AMMCompanionClose/
+    Module.reds
+    Config.reds
+    CompanionCloseSystem.reds
+  bin/x64/plugins/cyber_engine_tweaks/mods/AMMCompanionClose/
+    init.lua
+```
+
+## Usage
+
+1. Start the game and load a save
+2. Open AMM and spawn an NPC companion
+3. Press **F6** to enable close-follow mode
+4. Walk/run/drive around -- the companion stays right behind you
+5. Press **F6** again to disable
+
+### CET Overlay
+
+Open the CET overlay (`~` key) and you'll see a **Companion Close-Follow** window with a toggle button and status display.
+
+## Configuration
+
+Edit `r6/scripts/AMMCompanionClose/Config.reds` to change:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `TeleportDistance` | `15.0` | Beyond this, NPC is teleported instantly |
+| `FollowDistance` | `3.0` | Beyond this, NPC is smoothly moved closer |
+| `TargetDistance` | `1.8` | How close to V the NPC ends up |
+| `TickInterval` | `0.25` | Seconds between position checks (lower = smoother) |
+| `LerpFactor` | `0.45` | How fast the smooth movement is (0-1, higher = faster) |
+| `ToggleKey` | `IK_F6` | Which key toggles the feature |
+
+## For Mod Authors
+
+Other mods can interact with this system via redscript:
+
+```swift
+// Get the system
+let sys = GameInstance.GetScriptableSystemsContainer()
+    .Get(n"AMMCompanionClose.CompanionCloseSystem")
+    as AMMCompanionClose.CompanionCloseSystem;
+
+// Toggle programmatically
+sys.SetEnabled(true);
+sys.SetEnabled(false);
+
+// Check state
+let on: Bool = sys.IsEnabled();
+
+// Register custom entity tags (if your mod uses its own tags)
+sys.RegisterTag(n"MyModCompanions");
+```
+
+## How It Works
+
+The mod uses Codeware's `ScriptableSystem` to register:
+
+1. **Input callback** on F6 → toggles the feature
+2. **DelayCallback tick** every 0.25 s → checks every dynamic entity's distance to V
+3. **SetWorldTransform** → smoothly moves or teleports NPCs that are too far
+
+It scans for entities tagged with common AMM/Codeware tags (`AMM`, `Companion`, etc.) and repositions them. It does **not** modify any game files or override any existing AMM behavior -- it's purely additive.
+
+## License
+
+MIT -- do whatever you want with it.
