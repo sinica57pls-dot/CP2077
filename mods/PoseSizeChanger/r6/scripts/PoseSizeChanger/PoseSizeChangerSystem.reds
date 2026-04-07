@@ -147,7 +147,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         if IsDefined(target) {
             this.ApplyScaleToEntity(target, PoseSizeChangerConfig.DefaultScale());
             this.m_lastTargetName = this.GetEntityDisplayName(target);
-            ModLog(n"PoseSizeChanger", "Scaled to " + FloatToString(PoseSizeChangerConfig.DefaultScale()) + "x");
+            ModLog(n"PoseSizeChanger", "Scaled target entity.");
         } else {
             ModLog(n"PoseSizeChanger", "No valid target in crosshair.");
         }
@@ -317,12 +317,12 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         if !IsDefined(entity) { return; }
 
         let entityID: EntityID = entity.GetEntityID();
-        let targetHash: Uint64 = EntityID.GetHash(entityID);
+        let targetHash: Uint64 = EntityID.ToHash(entityID);
 
         // Update existing entry or create new one
         let i: Int32 = 0;
         while i < ArraySize(this.m_scaledEntities) {
-            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), targetHash) {
+            if Equals(EntityID.ToHash(this.m_scaledEntities[i].entityID), targetHash) {
                 this.m_scaledEntities[i].scaleFactor = factor;
                 // Apply immediately and return (early break)
                 let scaleVec: Vector3 = new Vector3(factor, factor, factor);
@@ -369,11 +369,11 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
     public func ResetEntity(entityID: EntityID) -> Void {
         let defaultScale: Vector3 = new Vector3(1.0, 1.0, 1.0);
-        let targetHash: Uint64 = EntityID.GetHash(entityID);
+        let targetHash: Uint64 = EntityID.ToHash(entityID);
 
         let i: Int32 = 0;
         while i < ArraySize(this.m_scaledEntities) {
-            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), targetHash) {
+            if Equals(EntityID.ToHash(this.m_scaledEntities[i].entityID), targetHash) {
                 let entity: ref<Entity> = this.ResolveEntity(entityID);
                 if IsDefined(entity) {
                     this.ScaleMeshComponents(entity, defaultScale);
@@ -453,7 +453,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     // ------------------------------------------------------------------
 
     private func ResolveEntity(entityID: EntityID) -> ref<Entity> {
-        let targetHash: Uint64 = EntityID.GetHash(entityID);
+        let targetHash: Uint64 = EntityID.ToHash(entityID);
 
         // Try DynamicEntitySystem first
         if IsDefined(this.m_entitySystem) && this.m_entitySystem.IsManaged(entityID) {
@@ -465,13 +465,13 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         let photoPuppet: wref<gamePuppet> = playerSystem.GetPhotoPuppet();
         if IsDefined(photoPuppet) {
             let puppetEntity: ref<Entity> = photoPuppet as Entity;
-            if IsDefined(puppetEntity) && Equals(EntityID.GetHash(puppetEntity.GetEntityID()), targetHash) {
+            if IsDefined(puppetEntity) && Equals(EntityID.ToHash(puppetEntity.GetEntityID()), targetHash) {
                 return puppetEntity;
             }
         }
 
         // Fallback: player entity
-        if IsDefined(this.m_player) && Equals(EntityID.GetHash(this.m_player.GetEntityID()), targetHash) {
+        if IsDefined(this.m_player) && Equals(EntityID.ToHash(this.m_player.GetEntityID()), targetHash) {
             return this.m_player as Entity;
         }
 
@@ -530,14 +530,170 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     public func GetScaleForEntity(entityID: EntityID) -> Float {
-        let targetHash: Uint64 = EntityID.GetHash(entityID);
+        let targetHash: Uint64 = EntityID.ToHash(entityID);
         let i: Int32 = 0;
         while i < ArraySize(this.m_scaledEntities) {
-            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), targetHash) {
+            if Equals(EntityID.ToHash(this.m_scaledEntities[i].entityID), targetHash) {
                 return this.m_scaledEntities[i].scaleFactor;
             }
             i += 1;
         }
         return 1.0;
+    }
+
+    // ------------------------------------------------------------------
+    //  Diagnostics  --  workability checker
+    // ------------------------------------------------------------------
+    //
+    //  RunDiagnostics() checks every dependency and feature the mod
+    //  needs to function, returning a human-readable results array.
+    //  Call from CET overlay "Run Diagnostics" button.
+    //
+    // ------------------------------------------------------------------
+
+    public func RunDiagnostics() -> array<String> {
+        let results: array<String>;
+
+        // --- 1. System status ---
+        if this.m_active {
+            ArrayPush(results, "PASS: System is active and attached");
+        } else {
+            ArrayPush(results, "FAIL: System is NOT active -- session may not be loaded");
+        }
+
+        // --- 2. Player reference ---
+        let player: wref<GameObject> = GetPlayer(this.GetGameInstance());
+        if IsDefined(player) {
+            ArrayPush(results, "PASS: Player reference acquired");
+        } else {
+            ArrayPush(results, "FAIL: Cannot get player reference -- are you in a loaded game?");
+        }
+
+        // --- 3. PlayerSystem + PhotoPuppet ---
+        let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGameInstance());
+        if IsDefined(playerSystem) {
+            ArrayPush(results, "PASS: PlayerSystem available");
+
+            let photoPuppet: wref<gamePuppet> = playerSystem.GetPhotoPuppet();
+            if IsDefined(photoPuppet) {
+                ArrayPush(results, "PASS: Photo Mode puppet present (photo mode active or was used)");
+            } else {
+                ArrayPush(results, "INFO: Photo Mode puppet is NULL (normal if photo mode was not opened yet)");
+            }
+        } else {
+            ArrayPush(results, "FAIL: PlayerSystem unavailable -- Codeware may not be loaded");
+        }
+
+        // --- 4. DynamicEntitySystem ---
+        let dynSys: ref<DynamicEntitySystem> = GameInstance.GetDynamicEntitySystem();
+        if IsDefined(dynSys) {
+            ArrayPush(results, "PASS: DynamicEntitySystem available");
+
+            // Check common tags
+            if dynSys.IsPopulated(n"AMM") || dynSys.IsPopulated(n"amm") {
+                ArrayPush(results, "INFO: AMM entities detected -- AMM is installed");
+            } else {
+                ArrayPush(results, "INFO: No AMM entities found (normal if AMM NPCs not spawned)");
+            }
+        } else {
+            ArrayPush(results, "FAIL: DynamicEntitySystem unavailable -- Codeware may not be loaded");
+        }
+
+        // --- 5. CallbackSystem ---
+        let cbSys: ref<CallbackSystem> = GameInstance.GetCallbackSystem();
+        if IsDefined(cbSys) {
+            ArrayPush(results, "PASS: CallbackSystem available (Codeware working)");
+        } else {
+            ArrayPush(results, "FAIL: CallbackSystem unavailable -- Codeware is NOT loaded");
+        }
+
+        // --- 6. DelaySystem ---
+        let delaySys: ref<DelaySystem> = GameInstance.GetDelaySystem(this.GetGameInstance());
+        if IsDefined(delaySys) {
+            ArrayPush(results, "PASS: DelaySystem available (tick scheduling works)");
+        } else {
+            ArrayPush(results, "FAIL: DelaySystem unavailable -- scale persistence will not work");
+        }
+
+        // --- 7. Mesh component access on player ---
+        if IsDefined(player) {
+            let entity: ref<Entity> = player as Entity;
+            if IsDefined(entity) {
+                let components: array<ref<IComponent>> = entity.GetComponents();
+                let meshCount: Int32 = 0;
+                let i: Int32 = 0;
+                while i < ArraySize(components) {
+                    let comp: ref<IComponent> = components[i];
+                    if IsDefined(comp) {
+                        if comp.IsA(n"entSkinnedMeshComponent")
+                            || comp.IsA(n"entMeshComponent")
+                            || comp.IsA(n"entMorphTargetSkinnedMeshComponent")
+                            || comp.IsA(n"entGarmentSkinnedMeshComponent") {
+                            meshCount += 1;
+                        }
+                    }
+                    i += 1;
+                }
+
+                if meshCount > 0 {
+                    ArrayPush(results, "PASS: Found mesh components on player (" + IntToString(meshCount) + " mesh components)");
+                } else {
+                    ArrayPush(results, "WARN: No mesh components found on player -- scaling may not work");
+                }
+
+                // Test visualScale access
+                let testComp: ref<IComponent> = entity.FindComponentByType(n"entSkinnedMeshComponent");
+                if IsDefined(testComp) {
+                    let mesh: ref<MeshComponent> = testComp as MeshComponent;
+                    if IsDefined(mesh) {
+                        ArrayPush(results, "PASS: visualScale property accessible on MeshComponent");
+                    } else {
+                        ArrayPush(results, "FAIL: Cannot cast to MeshComponent -- Codeware addon may be missing");
+                    }
+                } else {
+                    ArrayPush(results, "WARN: No entSkinnedMeshComponent found via FindComponentByType");
+                }
+            }
+        }
+
+        // --- 8. PreGame check ---
+        if GameInstance.GetSystemRequestsHandler().IsPreGame() {
+            ArrayPush(results, "FAIL: Currently in PreGame (main menu) -- load a save first");
+        } else {
+            ArrayPush(results, "PASS: In-game session active");
+        }
+
+        // --- 9. Scaled entities status ---
+        let scaledCount: Int32 = ArraySize(this.m_scaledEntities);
+        if scaledCount > 0 {
+            ArrayPush(results, "INFO: Currently tracking " + IntToString(scaledCount) + " scaled entities");
+        } else {
+            ArrayPush(results, "INFO: No entities currently scaled");
+        }
+
+        // --- 10. Tick status ---
+        if this.m_ticking {
+            ArrayPush(results, "PASS: Tick loop is running (scale persistence active)");
+        } else {
+            if scaledCount > 0 {
+                ArrayPush(results, "WARN: Tick loop is NOT running but entities are scaled -- reapply to restart");
+            } else {
+                ArrayPush(results, "INFO: Tick loop idle (normal when nothing is scaled)");
+            }
+        }
+
+        // Log all results
+        let r: Int32 = 0;
+        while r < ArraySize(results) {
+            ModLog(n"PoseSizeChanger", "[Diagnostics] " + results[r]);
+            r += 1;
+        }
+
+        return results;
+    }
+
+    public func GetDiagnosticCount() -> Int32 {
+        // Returns the number of checks (for pre-allocation in CET)
+        return 12;
     }
 }
