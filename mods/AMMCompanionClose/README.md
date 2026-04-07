@@ -20,6 +20,8 @@ Press **F6** to toggle it on/off at any time.
 
 ## Installation
 
+Just put it in the game folder.
+
 ### Requirements
 - [Cyber Engine Tweaks](https://www.nexusmods.com/cyberpunk2077/mods/107) 1.37+
 - [RED4ext](https://www.nexusmods.com/cyberpunk2077/mods/2380) 1.29+
