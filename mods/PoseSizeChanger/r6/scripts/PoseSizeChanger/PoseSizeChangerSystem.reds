@@ -1,27 +1,26 @@
 module PoseSizeChanger
 
 // ---------------------------------------------------------------------------
-//  Pose Size Changer System
+//  Pose Size Changer System  v1.0.1
 // ---------------------------------------------------------------------------
 //
-//  What it does
-//  ------------
-//  AMM-style "aim and apply" entity scaler for Photo Mode.
+//  AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
 //
 //  1. Look at a character (player V, AMM-spawned NPC, photo mode puppet)
 //  2. Press F9 (or use the CET overlay) to scale them up
 //  3. The scale persists through pose changes
 //  4. Press F10 to reset that character back to normal
 //
-//  The system keeps a list of scaled entities and periodically reapplies
-//  the scale so it survives pose switches, component reloads, etc.
-//
-//  Architecture
-//  ------------
-//  - PoseSizeChangerSystem : ScriptableSystem managing everything
-//  - PoseSizeChangerTick   : DelayCallback for periodic scale maintenance
-//  - ScaledEntityEntry     : lightweight struct tracking entityID + factor
-//  - Config                : static tunables in Config.reds
+//  v1.0.1 fixes:
+//    - Replaced FTLog with ModLog (guaranteed native)
+//    - Added entMorphTargetSkinnedMeshComponent + entGarmentSkinnedMeshComponent
+//    - Fixed stale entity cleanup in tick loop
+//    - Fixed early-break in duplicate entity check
+//    - Removed silent player fallback from crosshair targeting
+//    - Added dedicated ApplyScaleToPlayer API
+//    - Cached tag array (built once, not per-call)
+//    - Hoisted Vector3 allocation out of tick loop
+//    - Added lightweight UpdateTarget / GetLastTargetName for CET overlay
 //
 // ---------------------------------------------------------------------------
 
@@ -61,14 +60,16 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
     // State
     private let m_active: Bool;
+    private let m_ticking: Bool;
 
     // The list of entities we are actively scaling
     private let m_scaledEntities: array<ref<ScaledEntityEntry>>;
 
-    // Last entity the player aimed at (for CET overlay display)
-    private let m_lastTargetID: EntityID;
+    // Cached tag list for entity lookups (built once in Initialize)
+    private let m_lookupTags: array<CName>;
+
+    // Last targeted entity info (lightweight cache for CET overlay)
     private let m_lastTargetName: String;
-    private let m_ticking: Bool;
 
     // ------------------------------------------------------------------
     //  Lifecycle
@@ -77,6 +78,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     private func OnAttach() -> Void {
         this.m_active = false;
         this.m_ticking = false;
+        this.m_lastTargetName = "None";
 
         // Register hotkeys
         GameInstance.GetCallbackSystem()
@@ -108,9 +110,19 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         if GameInstance.GetSystemRequestsHandler().IsPreGame() { return; }
 
         this.m_entitySystem = GameInstance.GetDynamicEntitySystem();
+
+        // Build tag lookup array once
+        ArrayClear(this.m_lookupTags);
+        ArrayPush(this.m_lookupTags, n"AMM");
+        ArrayPush(this.m_lookupTags, n"amm");
+        ArrayPush(this.m_lookupTags, n"Companion");
+        ArrayPush(this.m_lookupTags, n"companion");
+        ArrayPush(this.m_lookupTags, n"PhotoMode");
+        ArrayPush(this.m_lookupTags, n"photomode");
+
         this.m_active = true;
 
-        FTLog("[PoseSizeChanger] System ready. F9 = scale target, F10 = reset target.");
+        ModLog(n"PoseSizeChanger", "System ready. F9 = scale target, F10 = reset target.");
     }
 
     // ------------------------------------------------------------------
@@ -121,6 +133,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         this.ResetAll();
         this.m_active = false;
         this.m_ticking = false;
+        this.m_lastTargetName = "None";
     }
 
     // ------------------------------------------------------------------
@@ -133,9 +146,10 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         let target: ref<Entity> = this.FindLookAtEntity();
         if IsDefined(target) {
             this.ApplyScaleToEntity(target, PoseSizeChangerConfig.DefaultScale());
-            FTLog("[PoseSizeChanger] Scaled entity to " + FloatToString(PoseSizeChangerConfig.DefaultScale()) + "x");
+            this.m_lastTargetName = this.GetEntityDisplayName(target);
+            ModLog(n"PoseSizeChanger", "Scaled to " + FloatToString(PoseSizeChangerConfig.DefaultScale()) + "x");
         } else {
-            FTLog("[PoseSizeChanger] No valid target in crosshair.");
+            ModLog(n"PoseSizeChanger", "No valid target in crosshair.");
         }
     }
 
@@ -149,14 +163,14 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         let target: ref<Entity> = this.FindLookAtEntity();
         if IsDefined(target) {
             this.ResetEntity(target.GetEntityID());
-            FTLog("[PoseSizeChanger] Reset entity to default scale.");
+            ModLog(n"PoseSizeChanger", "Reset entity to default scale.");
         } else {
-            FTLog("[PoseSizeChanger] No valid target in crosshair.");
+            ModLog(n"PoseSizeChanger", "No valid target in crosshair.");
         }
     }
 
     // ------------------------------------------------------------------
-    //  Tick: periodically reapply scales
+    //  Tick: periodically reapply scales + cleanup stale entries
     // ------------------------------------------------------------------
 
     public func ScheduleTick() -> Void {
@@ -177,16 +191,19 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         if !this.m_active { return; }
         if ArraySize(this.m_scaledEntities) == 0 { return; }
 
-        // Reapply all active scales
-        let i: Int32 = 0;
-        while i < ArraySize(this.m_scaledEntities) {
+        // Reapply scales; remove stale (despawned) entries in reverse order
+        let i: Int32 = ArraySize(this.m_scaledEntities) - 1;
+        while i >= 0 {
             let entry: ref<ScaledEntityEntry> = this.m_scaledEntities[i];
             let entity: ref<Entity> = this.ResolveEntity(entry.entityID);
             if IsDefined(entity) {
                 let scaleVec: Vector3 = new Vector3(entry.scaleFactor, entry.scaleFactor, entry.scaleFactor);
                 this.ScaleMeshComponents(entity, scaleVec);
+            } else {
+                // Entity despawned or no longer valid -- remove stale entry
+                ArrayErase(this.m_scaledEntities, i);
             }
-            i += 1;
+            i -= 1;
         }
 
         // Keep ticking while there are scaled entities
@@ -195,15 +212,6 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
     // ------------------------------------------------------------------
     //  Entity targeting (AMM-style look-at)
-    // ------------------------------------------------------------------
-    //
-    //  Scans nearby entities and returns the one closest to the
-    //  player's crosshair (forward direction) within a cone.
-    //
-    //  Checks:  1) Photo Mode puppet
-    //           2) The player entity itself
-    //           3) All DynamicEntitySystem-tagged entities (AMM, etc.)
-    //
     // ------------------------------------------------------------------
 
     public func FindLookAtEntity() -> ref<Entity> {
@@ -235,19 +243,11 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             }
         }
 
-        // --- 2) Check DynamicEntitySystem tags ---
+        // --- 2) Check DynamicEntitySystem tags (cached array) ---
         if IsDefined(this.m_entitySystem) {
             let tagIndex: Int32 = 0;
-            let tags: array<CName>;
-            ArrayPush(tags, n"AMM");
-            ArrayPush(tags, n"amm");
-            ArrayPush(tags, n"Companion");
-            ArrayPush(tags, n"companion");
-            ArrayPush(tags, n"PhotoMode");
-            ArrayPush(tags, n"photomode");
-
-            while tagIndex < ArraySize(tags) {
-                let tag: CName = tags[tagIndex];
+            while tagIndex < ArraySize(this.m_lookupTags) {
+                let tag: CName = this.m_lookupTags[tagIndex];
                 if this.m_entitySystem.IsPopulated(tag) {
                     let entities: array<ref<Entity>> = this.m_entitySystem.GetTagged(tag);
                     let entI: Int32 = 0;
@@ -267,23 +267,17 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             }
         }
 
-        // --- 3) If nothing found, allow targeting self (player puppet) ---
-        if !IsDefined(bestEntity) {
-            // Let the player target themselves by looking down or when no NPC is near
-            bestEntity = this.m_player as Entity;
-        }
-
-        // Store for CET overlay
+        // Update cached target name for CET overlay (lightweight)
         if IsDefined(bestEntity) {
-            this.m_lastTargetID = bestEntity.GetEntityID();
             this.m_lastTargetName = this.GetEntityDisplayName(bestEntity);
+        } else {
+            this.m_lastTargetName = "None";
         }
 
+        // NO silent fallback to player -- return null if nothing in crosshair
         return bestEntity;
     }
 
-    // Evaluate how well an entity matches the crosshair.
-    // Returns dot product (higher = more aligned) or -1.0 if out of range.
     private func EvaluateTarget(entity: ref<Entity>, playerPos: Vector4, playerFwd: Vector4, maxDist: Float, minDot: Float) -> Float {
         let entityPos: Vector4 = entity.GetWorldPosition();
 
@@ -293,18 +287,15 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
         let dist: Float = SqrtF(dx * dx + dy * dy + dz * dz);
 
-        // Too close (self) or too far
         if dist < 0.3 || dist > maxDist {
             return -1.0;
         }
 
-        // Normalize direction to entity
         let invDist: Float = 1.0 / dist;
         dx *= invDist;
         dy *= invDist;
         dz *= invDist;
 
-        // Dot product: 1.0 = perfectly aligned, 0.0 = perpendicular
         let dot: Float = dx * playerFwd.X + dy * playerFwd.Y + dz * playerFwd.Z;
 
         if dot < minDot {
@@ -315,10 +306,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     private func IsPlayer(entity: ref<Entity>) -> Bool {
-        if entity.IsA(n"PlayerPuppet") || entity.IsA(n"gamePlayerPuppet") {
-            return true;
-        }
-        return false;
+        return entity.IsA(n"PlayerPuppet") || entity.IsA(n"gamePlayerPuppet");
     }
 
     // ------------------------------------------------------------------
@@ -329,25 +317,28 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         if !IsDefined(entity) { return; }
 
         let entityID: EntityID = entity.GetEntityID();
+        let targetHash: Uint64 = EntityID.GetHash(entityID);
 
         // Update existing entry or create new one
-        let found: Bool = false;
         let i: Int32 = 0;
         while i < ArraySize(this.m_scaledEntities) {
-            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), EntityID.GetHash(entityID)) {
+            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), targetHash) {
                 this.m_scaledEntities[i].scaleFactor = factor;
-                found = true;
+                // Apply immediately and return (early break)
+                let scaleVec: Vector3 = new Vector3(factor, factor, factor);
+                this.ScaleMeshComponents(entity, scaleVec);
+                this.ScheduleTick();
+                return;
             }
             i += 1;
         }
 
-        if !found {
-            let entry: ref<ScaledEntityEntry> = new ScaledEntityEntry();
-            entry.entityID = entityID;
-            entry.scaleFactor = factor;
-            entry.displayName = this.GetEntityDisplayName(entity);
-            ArrayPush(this.m_scaledEntities, entry);
-        }
+        // New entry
+        let entry: ref<ScaledEntityEntry> = new ScaledEntityEntry();
+        entry.entityID = entityID;
+        entry.scaleFactor = factor;
+        entry.displayName = this.GetEntityDisplayName(entity);
+        ArrayPush(this.m_scaledEntities, entry);
 
         // Apply immediately
         let scaleVec: Vector3 = new Vector3(factor, factor, factor);
@@ -366,14 +357,23 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         return false;
     }
 
+    public func ApplyScaleToPlayer(factor: Float) -> Bool {
+        if !IsDefined(this.m_player) {
+            this.m_player = GetPlayer(this.GetGameInstance());
+        }
+        if !IsDefined(this.m_player) { return false; }
+
+        this.ApplyScaleToEntity(this.m_player as Entity, factor);
+        return true;
+    }
+
     public func ResetEntity(entityID: EntityID) -> Void {
         let defaultScale: Vector3 = new Vector3(1.0, 1.0, 1.0);
+        let targetHash: Uint64 = EntityID.GetHash(entityID);
 
-        // Find and remove the entry
         let i: Int32 = 0;
         while i < ArraySize(this.m_scaledEntities) {
-            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), EntityID.GetHash(entityID)) {
-                // Restore default scale
+            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), targetHash) {
                 let entity: ref<Entity> = this.ResolveEntity(entityID);
                 if IsDefined(entity) {
                     this.ScaleMeshComponents(entity, defaultScale);
@@ -394,6 +394,11 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         return false;
     }
 
+    public func ResetPlayer() -> Void {
+        if !IsDefined(this.m_player) { return; }
+        this.ResetEntity(this.m_player.GetEntityID());
+    }
+
     public func ResetAll() -> Void {
         let defaultScale: Vector3 = new Vector3(1.0, 1.0, 1.0);
 
@@ -412,6 +417,13 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     // ------------------------------------------------------------------
     //  Mesh component scaling
     // ------------------------------------------------------------------
+    //  Scales ALL mesh-type components on the entity:
+    //    - entMeshComponent           (static meshes)
+    //    - entSkinnedMeshComponent    (skinned body/head)
+    //    - entGarmentSkinnedMeshComponent  (clothing)
+    //    - entMorphTargetSkinnedMeshComponent (body morph meshes)
+    //  All inherit from MeshComponent, so the cast and visualScale access work.
+    // ------------------------------------------------------------------
 
     private func ScaleMeshComponents(entity: ref<Entity>, scaleVec: Vector3) -> Void {
         if !IsDefined(entity) { return; }
@@ -422,7 +434,10 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         while i < ArraySize(components) {
             let comp: ref<IComponent> = components[i];
             if IsDefined(comp) {
-                if comp.IsA(n"entSkinnedMeshComponent") || comp.IsA(n"entMeshComponent") {
+                if comp.IsA(n"entSkinnedMeshComponent")
+                    || comp.IsA(n"entMeshComponent")
+                    || comp.IsA(n"entMorphTargetSkinnedMeshComponent")
+                    || comp.IsA(n"entGarmentSkinnedMeshComponent") {
                     let mesh: ref<MeshComponent> = comp as MeshComponent;
                     if IsDefined(mesh) {
                         mesh.visualScale = scaleVec;
@@ -438,6 +453,8 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     // ------------------------------------------------------------------
 
     private func ResolveEntity(entityID: EntityID) -> ref<Entity> {
+        let targetHash: Uint64 = EntityID.GetHash(entityID);
+
         // Try DynamicEntitySystem first
         if IsDefined(this.m_entitySystem) && this.m_entitySystem.IsManaged(entityID) {
             return this.m_entitySystem.GetEntity(entityID);
@@ -448,13 +465,13 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         let photoPuppet: wref<gamePuppet> = playerSystem.GetPhotoPuppet();
         if IsDefined(photoPuppet) {
             let puppetEntity: ref<Entity> = photoPuppet as Entity;
-            if IsDefined(puppetEntity) && Equals(EntityID.GetHash(puppetEntity.GetEntityID()), EntityID.GetHash(entityID)) {
+            if IsDefined(puppetEntity) && Equals(EntityID.GetHash(puppetEntity.GetEntityID()), targetHash) {
                 return puppetEntity;
             }
         }
 
-        // Try game entity registry (fallback -- the player or world entities)
-        if IsDefined(this.m_player) && Equals(EntityID.GetHash(this.m_player.GetEntityID()), EntityID.GetHash(entityID)) {
+        // Fallback: player entity
+        if IsDefined(this.m_player) && Equals(EntityID.GetHash(this.m_player.GetEntityID()), targetHash) {
             return this.m_player as Entity;
         }
 
@@ -462,15 +479,15 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     private func GetEntityDisplayName(entity: ref<Entity>) -> String {
-        // Try to get a meaningful name
         if entity.IsA(n"PlayerPuppet") || entity.IsA(n"gamePlayerPuppet") {
             return "Player V";
         }
-
-        if entity.IsA(n"gamePuppet") || entity.IsA(n"NPCPuppet") {
+        if entity.IsA(n"NPCPuppet") {
             return "NPC";
         }
-
+        if entity.IsA(n"gamePuppet") {
+            return "Puppet";
+        }
         return "Entity";
     }
 
@@ -500,22 +517,23 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         return 1.0;
     }
 
+    // Lightweight getter -- returns cached name, NO computation
     public func GetLastTargetName() -> String {
         return this.m_lastTargetName;
     }
 
-    public func RefreshTarget() -> String {
+    // Explicit target refresh -- call this from a button press, NOT per-frame
+    public func UpdateTarget() -> String {
         let target: ref<Entity> = this.FindLookAtEntity();
-        if IsDefined(target) {
-            return this.m_lastTargetName;
-        }
-        return "None";
+        // m_lastTargetName is updated inside FindLookAtEntity
+        return this.m_lastTargetName;
     }
 
     public func GetScaleForEntity(entityID: EntityID) -> Float {
+        let targetHash: Uint64 = EntityID.GetHash(entityID);
         let i: Int32 = 0;
         while i < ArraySize(this.m_scaledEntities) {
-            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), EntityID.GetHash(entityID)) {
+            if Equals(EntityID.GetHash(this.m_scaledEntities[i].entityID), targetHash) {
                 return this.m_scaledEntities[i].scaleFactor;
             }
             i += 1;
