@@ -1,15 +1,16 @@
 --[[
-    Pose Size Changer v1.0.2  --  CET Integration Layer
+    Pose Size Changer v1.0.3  --  CET Integration Layer
     =====================================================
 
     AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
 
-    v1.0.2 fixes:
-      - Replaced CollapsingHeader (CET incompatible) with text section headers
-      - Replaced TextWrapped (CET incompatible) with Text
-      - Added full diagnostics panel (workability checker)
-      - Added mod conflict detection
-      - All ImGui calls verified against CET reference implementations
+    v1.0.3 fixes:
+      - Updated version strings
+      - Diagnostics now show per-component-type breakdown
+      - Better error messages for the skinned mesh fix
+      - pcall safety on all Redscript bridge calls
+      - Cached system ref invalidation on session end
+      - Fixed diagResults iteration for Redscript arrays (0-indexed)
 
     Requirements:
       - Cyber Engine Tweaks 1.37+
@@ -27,6 +28,7 @@ local PoseSizeChanger = {
     statusTime = 0,
     diagResults = {},
     diagRan = false,
+    sessionReady = false,
 }
 
 -- -----------------------------------------------------------------------
@@ -36,10 +38,24 @@ function PoseSizeChanger:GetSystem()
     if self.system == nil then
         local ok, container = pcall(Game.GetScriptableSystemsContainer)
         if ok and container then
-            self.system = container:Get("PoseSizeChanger.PoseSizeChangerSystem")
+            local ok2, sys = pcall(function()
+                return container:Get("PoseSizeChanger.PoseSizeChangerSystem")
+            end)
+            if ok2 and sys then
+                self.system = sys
+            end
         end
     end
     return self.system
+end
+
+-- Invalidate cached system ref (call on session end / shutdown)
+function PoseSizeChanger:InvalidateSystem()
+    self.system = nil
+    self.sessionReady = false
+    self.diagResults = {}
+    self.diagRan = false
+    self.targetName = "None"
 end
 
 -- Status message helper (shows for 3 seconds)
@@ -113,7 +129,12 @@ registerForEvent("onDraw", function()
         return
     end
 
-    local isActive = sys:IsActive()
+    local isActive = false
+    local okActive, result = pcall(function() return sys:IsActive() end)
+    if okActive then
+        isActive = result
+    end
+
     if not isActive then
         ImGui.TextColored(1.0, 0.6, 0.2, 1.0, "System loaded but not active.")
         ImGui.Text("Load a game save to activate.")
@@ -167,7 +188,7 @@ registerForEvent("onDraw", function()
     ImGui.Spacing()
 
     ImGui.PushItemWidth(200)
-    PoseSizeChanger.scaleFactor, changed = ImGui.SliderFloat("##scale", PoseSizeChanger.scaleFactor, 0.50, 3.00, "%.2fx")
+    PoseSizeChanger.scaleFactor = ImGui.SliderFloat("##scale", PoseSizeChanger.scaleFactor, 0.50, 3.00, "%.2fx")
     ImGui.PopItemWidth()
 
     ImGui.Spacing()
@@ -199,8 +220,8 @@ registerForEvent("onDraw", function()
     ImGui.PushStyleColor(ImGuiCol.Button, 0.15, 0.55, 0.25, 1.0)
     ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.7, 0.3, 1.0)
     if ImGui.Button("Apply to Target") then
-        local ok2, result = pcall(function() return sys:ApplyScaleToLookAt(PoseSizeChanger.scaleFactor) end)
-        if ok2 and result then
+        local ok2, applied = pcall(function() return sys:ApplyScaleToLookAt(PoseSizeChanger.scaleFactor) end)
+        if ok2 and applied then
             PoseSizeChanger:SetStatus("Applied " .. string.format("%.2fx", PoseSizeChanger.scaleFactor) .. " to target")
         else
             PoseSizeChanger:SetStatus("No target found -- aim at a character")
@@ -214,8 +235,8 @@ registerForEvent("onDraw", function()
     ImGui.PushStyleColor(ImGuiCol.Button, 0.55, 0.15, 0.15, 1.0)
     ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.7, 0.2, 0.2, 1.0)
     if ImGui.Button("Reset Target") then
-        local ok2, result = pcall(function() return sys:ResetLookAt() end)
-        if ok2 and result then
+        local ok2, applied = pcall(function() return sys:ResetLookAt() end)
+        if ok2 and applied then
             PoseSizeChanger:SetStatus("Reset target to 1.0x")
         else
             PoseSizeChanger:SetStatus("No target found -- aim at a character")
@@ -229,8 +250,8 @@ registerForEvent("onDraw", function()
     ImGui.PushStyleColor(ImGuiCol.Button, 0.15, 0.35, 0.55, 1.0)
     ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.2, 0.45, 0.7, 1.0)
     if ImGui.Button("Apply to Player V") then
-        local ok2, result = pcall(function() return sys:ApplyScaleToPlayer(PoseSizeChanger.scaleFactor) end)
-        if ok2 and result then
+        local ok2, applied = pcall(function() return sys:ApplyScaleToPlayer(PoseSizeChanger.scaleFactor) end)
+        if ok2 and applied then
             PoseSizeChanger:SetStatus("Applied " .. string.format("%.2fx", PoseSizeChanger.scaleFactor) .. " to Player V")
         else
             PoseSizeChanger:SetStatus("Player not available")
@@ -273,14 +294,14 @@ registerForEvent("onDraw", function()
     ImGui.Spacing()
 
     if count > 0 then
-        local i = 0
-        while i < count do
-            local okN, name = pcall(function() return sys:GetScaledEntityName(i) end)
-            local okF, factor = pcall(function() return sys:GetScaledEntityFactor(i) end)
-            name = (okN and name and name ~= "") and name or ("Entity #" .. tostring(i + 1))
+        local idx = 0
+        while idx < count do
+            local okN, name = pcall(function() return sys:GetScaledEntityName(idx) end)
+            local okF, factor = pcall(function() return sys:GetScaledEntityFactor(idx) end)
+            name = (okN and name and name ~= "") and name or ("Entity #" .. tostring(idx + 1))
             factor = (okF and factor) or 1.0
             ImGui.Text("  * " .. string.format("%s: %.2fx", name, factor))
-            i = i + 1
+            idx = idx + 1
         end
     else
         ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "No entities scaled yet.")
@@ -296,24 +317,29 @@ registerForEvent("onDraw", function()
     ImGui.Spacing()
 
     if ImGui.Button("Run Diagnostics") then
-        local okD, results = pcall(function() return sys:RunDiagnostics() end)
-        if okD and results then
+        local okD, rawResults = pcall(function() return sys:RunDiagnostics() end)
+        if okD and rawResults then
             PoseSizeChanger.diagResults = {}
-            -- Results come back as a Redscript array; iterate
-            local len = #results
-            if len == 0 then
-                -- Try accessing as table/userdata
-                local idx = 0
-                while true do
-                    local okR, line = pcall(function() return results[idx] end)
-                    if not okR or line == nil or line == "" then break end
-                    table.insert(PoseSizeChanger.diagResults, line)
-                    idx = idx + 1
-                    if idx > 20 then break end -- safety limit
-                end
-            else
-                for idx = 1, len do
-                    table.insert(PoseSizeChanger.diagResults, results[idx])
+            -- Redscript arrays are 0-indexed userdata in CET
+            -- Try 0-indexed access first (standard CET bridge behavior)
+            local idx = 0
+            local safetyLimit = 30
+            while idx < safetyLimit do
+                local okR, line = pcall(function() return rawResults[idx] end)
+                if not okR or line == nil or line == "" then break end
+                table.insert(PoseSizeChanger.diagResults, tostring(line))
+                idx = idx + 1
+            end
+            -- If 0-indexed got nothing, try 1-indexed (some CET versions)
+            if #PoseSizeChanger.diagResults == 0 then
+                local len = 0
+                local okLen, rawLen = pcall(function() return #rawResults end)
+                if okLen and rawLen then len = rawLen end
+                for li = 1, len do
+                    local okR, line = pcall(function() return rawResults[li] end)
+                    if okR and line and line ~= "" then
+                        table.insert(PoseSizeChanger.diagResults, tostring(line))
+                    end
                 end
             end
             PoseSizeChanger.diagRan = true
@@ -342,6 +368,8 @@ registerForEvent("onDraw", function()
                     ImGui.TextColored(1.0, 0.8, 0.2, 1.0, text)
                 elseif string.find(text, "^INFO") then
                     ImGui.TextColored(0.5, 0.7, 1.0, 1.0, text)
+                elseif string.find(text, "^ERROR") then
+                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, text)
                 else
                     ImGui.Text(text)
                 end
@@ -370,7 +398,7 @@ registerForEvent("onDraw", function()
     ImGui.Text("Use 'Apply to Target' or F9 to scale them.")
     ImGui.Text("Scale persists through pose changes!")
     ImGui.Spacing()
-    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v1.0.2")
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v1.0.3")
 
     ImGui.End()
 end)
@@ -379,12 +407,11 @@ end)
 -- CET lifecycle
 -- -----------------------------------------------------------------------
 registerForEvent("onInit", function()
-    print("[PoseSizeChanger] CET mod loaded. v1.0.2")
+    print("[PoseSizeChanger] CET mod loaded. v1.0.3")
 end)
 
 registerForEvent("onShutdown", function()
-    PoseSizeChanger.system = nil
-    PoseSizeChanger.diagResults = {}
+    PoseSizeChanger:InvalidateSystem()
     print("[PoseSizeChanger] CET mod unloaded.")
 end)
 

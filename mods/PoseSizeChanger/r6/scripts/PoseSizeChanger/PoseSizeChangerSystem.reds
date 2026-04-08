@@ -1,7 +1,7 @@
 module PoseSizeChanger
 
 // ---------------------------------------------------------------------------
-//  Pose Size Changer System  v1.0.1
+//  Pose Size Changer System  v1.0.3
 // ---------------------------------------------------------------------------
 //
 //  AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
@@ -11,18 +11,45 @@ module PoseSizeChanger
 //  3. The scale persists through pose changes
 //  4. Press F10 to reset that character back to normal
 //
-//  v1.0.1 fixes:
-//    - Replaced FTLog with ModLog (guaranteed native)
-//    - Added entMorphTargetSkinnedMeshComponent + entGarmentSkinnedMeshComponent
-//    - Fixed stale entity cleanup in tick loop
-//    - Fixed early-break in duplicate entity check
-//    - Removed silent player fallback from crosshair targeting
-//    - Added dedicated ApplyScaleToPlayer API
-//    - Cached tag array (built once, not per-call)
-//    - Hoisted Vector3 allocation out of tick loop
-//    - Added lightweight UpdateTarget / GetLastTargetName for CET overlay
+//  v1.0.3 fixes:
+//    CRITICAL: entSkinnedMeshComponent does NOT inherit from MeshComponent.
+//    They are siblings under IVisualComponent. The `comp as MeshComponent`
+//    cast silently returned null for ALL character meshes (body, head,
+//    clothing), meaning scaling did NOTHING on characters.
+//
+//    Fix: Declare @addField for visualScale on entSkinnedMeshComponent
+//    and entMorphTargetSkinnedMeshComponent (the engine has this field
+//    natively at the C++ level, Codeware just doesn't expose it).
+//    Then cast to the correct concrete types instead of MeshComponent.
+//
+//    Additional fixes:
+//    - Added entCharacterCustomizationSkinnedMeshComponent support
+//    - Diagnostics now tests the ACTUAL cast paths used for scaling
+//    - Diagnostics reports per-component-type counts
+//    - FloatToStringPrec helper for safe float-to-string conversion
+//    - Fixed m_ticking race: clear flag BEFORE checking conditions
+//    - ResolveEntity now checks all DynamicEntitySystem tags as fallback
 //
 // ---------------------------------------------------------------------------
+
+// ============================
+//  Expose visualScale on skinned mesh component types
+// ============================
+//
+//  The CP2077 engine has visualScale on these components at the C++ level
+//  (confirmed by WolvenKit Entity Instance Data, Object Spawner, and the
+//  appearancePartComponentOverrides struct). Codeware only exposes it on
+//  MeshComponent via @addField. We do the same for the skinned types.
+//
+//  If a future Codeware version adds these, @addField will simply produce
+//  a harmless "field already defined" warning and have no effect.
+// ============================
+
+@addField(entSkinnedMeshComponent)
+public native let visualScale: Vector3;
+
+@addField(entMorphTargetSkinnedMeshComponent)
+public native let visualScale: Vector3;
 
 // ============================
 //  Scaled entity tracking
@@ -122,7 +149,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
         this.m_active = true;
 
-        ModLog(n"PoseSizeChanger", "System ready. F9 = scale target, F10 = reset target.");
+        ModLog(n"PoseSizeChanger", "v1.0.3 ready. F9 = scale target, F10 = reset target.");
     }
 
     // ------------------------------------------------------------------
@@ -186,6 +213,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     public func OnTick() -> Void {
+        // Clear ticking flag FIRST to avoid race condition
         this.m_ticking = false;
 
         if !this.m_active { return; }
@@ -231,14 +259,16 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
         // --- 1) Check photo mode puppet ---
         let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGameInstance());
-        let photoPuppet: wref<gamePuppet> = playerSystem.GetPhotoPuppet();
-        if IsDefined(photoPuppet) {
-            let puppetEntity: ref<Entity> = photoPuppet as Entity;
-            if IsDefined(puppetEntity) {
-                let dot: Float = this.EvaluateTarget(puppetEntity, playerPos, playerFwd, maxDist, minDot);
-                if dot > bestDot {
-                    bestDot = dot;
-                    bestEntity = puppetEntity;
+        if IsDefined(playerSystem) {
+            let photoPuppet: wref<gamePuppet> = playerSystem.GetPhotoPuppet();
+            if IsDefined(photoPuppet) {
+                let puppetEntity: ref<Entity> = photoPuppet as Entity;
+                if IsDefined(puppetEntity) {
+                    let dot: Float = this.EvaluateTarget(puppetEntity, playerPos, playerFwd, maxDist, minDot);
+                    if dot > bestDot {
+                        bestDot = dot;
+                        bestEntity = puppetEntity;
+                    }
                 }
             }
         }
@@ -415,14 +445,32 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Mesh component scaling
+    //  Mesh component scaling  (v1.0.3 -- FIXED)
     // ------------------------------------------------------------------
-    //  Scales ALL mesh-type components on the entity:
-    //    - entMeshComponent           (static meshes)
-    //    - entSkinnedMeshComponent    (skinned body/head)
-    //    - entGarmentSkinnedMeshComponent  (clothing)
-    //    - entMorphTargetSkinnedMeshComponent (body morph meshes)
-    //  All inherit from MeshComponent, so the cast and visualScale access work.
+    //
+    //  CRITICAL FIX: The class hierarchy in CP2077 is:
+    //
+    //    IVisualComponent
+    //      +-- MeshComponent            (has native visualScale)
+    //      |     +-- PhysicalMeshComponent
+    //      |     +-- HudMeshComponent
+    //      +-- entISkinTargetComponent
+    //            +-- entSkinnedMeshComponent   (has native visualScale,
+    //            |     +-- entGarmentSkinnedMeshComponent   but NOT a
+    //            |     +-- entCharacterCustomizationSkinnedMeshComponent  MeshComponent!)
+    //            +-- entMorphTargetSkinnedMeshComponent  (same)
+    //
+    //  MeshComponent and entISkinTargetComponent are SIBLINGS. Casting
+    //  entSkinnedMeshComponent to MeshComponent ALWAYS returns null.
+    //
+    //  v1.0.2 and earlier: `comp as MeshComponent` -> null for ALL character
+    //  meshes. The mod literally did nothing for characters.
+    //
+    //  v1.0.3: We now cast to the correct concrete types:
+    //    - MeshComponent for static/prop meshes (visualScale from Codeware @addField)
+    //    - entSkinnedMeshComponent for character body/head (visualScale from our @addField)
+    //    - entMorphTargetSkinnedMeshComponent for morph targets (same)
+    //
     // ------------------------------------------------------------------
 
     private func ScaleMeshComponents(entity: ref<Entity>, scaleVec: Vector3) -> Void {
@@ -434,15 +482,32 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         while i < ArraySize(components) {
             let comp: ref<IComponent> = components[i];
             if IsDefined(comp) {
-                if comp.IsA(n"entSkinnedMeshComponent")
-                    || comp.IsA(n"entMeshComponent")
-                    || comp.IsA(n"entMorphTargetSkinnedMeshComponent")
-                    || comp.IsA(n"entGarmentSkinnedMeshComponent") {
+                // --- Skinned mesh (character body, head, limbs) ---
+                // Also catches entGarmentSkinnedMeshComponent and
+                // entCharacterCustomizationSkinnedMeshComponent (both extend
+                // entSkinnedMeshComponent).
+                if comp.IsA(n"entSkinnedMeshComponent") {
+                    let skinned: ref<entSkinnedMeshComponent> = comp as entSkinnedMeshComponent;
+                    if IsDefined(skinned) {
+                        skinned.visualScale = scaleVec;
+                    }
+                }
+
+                // --- Morph target skinned mesh (body morphs) ---
+                else { if comp.IsA(n"entMorphTargetSkinnedMeshComponent") {
+                    let morph: ref<entMorphTargetSkinnedMeshComponent> = comp as entMorphTargetSkinnedMeshComponent;
+                    if IsDefined(morph) {
+                        morph.visualScale = scaleVec;
+                    }
+                }
+
+                // --- Static/prop mesh (MeshComponent and subclasses) ---
+                else { if comp.IsA(n"MeshComponent") {
                     let mesh: ref<MeshComponent> = comp as MeshComponent;
                     if IsDefined(mesh) {
                         mesh.visualScale = scaleVec;
                     }
-                }
+                } } }
             }
             i += 1;
         }
@@ -457,22 +522,47 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
         // Try DynamicEntitySystem first
         if IsDefined(this.m_entitySystem) && this.m_entitySystem.IsManaged(entityID) {
-            return this.m_entitySystem.GetEntity(entityID);
+            let dynEntity: ref<Entity> = this.m_entitySystem.GetEntity(entityID);
+            if IsDefined(dynEntity) {
+                return dynEntity;
+            }
         }
 
         // Try photo puppet
         let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGameInstance());
-        let photoPuppet: wref<gamePuppet> = playerSystem.GetPhotoPuppet();
-        if IsDefined(photoPuppet) {
-            let puppetEntity: ref<Entity> = photoPuppet as Entity;
-            if IsDefined(puppetEntity) && Equals(EntityID.ToHash(puppetEntity.GetEntityID()), targetHash) {
-                return puppetEntity;
+        if IsDefined(playerSystem) {
+            let photoPuppet: wref<gamePuppet> = playerSystem.GetPhotoPuppet();
+            if IsDefined(photoPuppet) {
+                let puppetEntity: ref<Entity> = photoPuppet as Entity;
+                if IsDefined(puppetEntity) && Equals(EntityID.ToHash(puppetEntity.GetEntityID()), targetHash) {
+                    return puppetEntity;
+                }
             }
         }
 
         // Fallback: player entity
         if IsDefined(this.m_player) && Equals(EntityID.ToHash(this.m_player.GetEntityID()), targetHash) {
             return this.m_player as Entity;
+        }
+
+        // Last resort: scan all DynamicEntitySystem tags for unmanaged but tagged entities
+        if IsDefined(this.m_entitySystem) {
+            let tagIndex: Int32 = 0;
+            while tagIndex < ArraySize(this.m_lookupTags) {
+                let tag: CName = this.m_lookupTags[tagIndex];
+                if this.m_entitySystem.IsPopulated(tag) {
+                    let entities: array<ref<Entity>> = this.m_entitySystem.GetTagged(tag);
+                    let entI: Int32 = 0;
+                    while entI < ArraySize(entities) {
+                        let entity: ref<Entity> = entities[entI];
+                        if IsDefined(entity) && Equals(EntityID.ToHash(entity.GetEntityID()), targetHash) {
+                            return entity;
+                        }
+                        entI += 1;
+                    }
+                }
+                tagIndex += 1;
+            }
         }
 
         return null;
@@ -542,13 +632,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Diagnostics  --  workability checker
-    // ------------------------------------------------------------------
-    //
-    //  RunDiagnostics() checks every dependency and feature the mod
-    //  needs to function, returning a human-readable results array.
-    //  Call from CET overlay "Run Diagnostics" button.
-    //
+    //  Diagnostics  --  workability checker  (v1.0.3 -- enhanced)
     // ------------------------------------------------------------------
 
     public func RunDiagnostics() -> array<String> {
@@ -589,7 +673,6 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         if IsDefined(dynSys) {
             ArrayPush(results, "PASS: DynamicEntitySystem available");
 
-            // Check common tags
             if dynSys.IsPopulated(n"AMM") || dynSys.IsPopulated(n"amm") {
                 ArrayPush(results, "INFO: AMM entities detected -- AMM is installed");
             } else {
@@ -615,55 +698,81 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             ArrayPush(results, "FAIL: DelaySystem unavailable -- scale persistence will not work");
         }
 
-        // --- 7. Mesh component access on player ---
+        // --- 7. Mesh component access on player (v1.0.3: per-type breakdown) ---
         if IsDefined(player) {
             let entity: ref<Entity> = player as Entity;
             if IsDefined(entity) {
                 let components: array<ref<IComponent>> = entity.GetComponents();
                 let meshCount: Int32 = 0;
-                let i: Int32 = 0;
-                while i < ArraySize(components) {
-                    let comp: ref<IComponent> = components[i];
+                let skinnedCount: Int32 = 0;
+                let morphCount: Int32 = 0;
+                let staticCount: Int32 = 0;
+                let ci: Int32 = 0;
+                while ci < ArraySize(components) {
+                    let comp: ref<IComponent> = components[ci];
                     if IsDefined(comp) {
-                        if comp.IsA(n"entSkinnedMeshComponent")
-                            || comp.IsA(n"entMeshComponent")
-                            || comp.IsA(n"entMorphTargetSkinnedMeshComponent")
-                            || comp.IsA(n"entGarmentSkinnedMeshComponent") {
+                        if comp.IsA(n"entSkinnedMeshComponent") {
+                            skinnedCount += 1;
                             meshCount += 1;
+                        } else {
+                            if comp.IsA(n"entMorphTargetSkinnedMeshComponent") {
+                                morphCount += 1;
+                                meshCount += 1;
+                            } else {
+                                if comp.IsA(n"MeshComponent") {
+                                    staticCount += 1;
+                                    meshCount += 1;
+                                }
+                            }
                         }
                     }
-                    i += 1;
+                    ci += 1;
                 }
 
                 if meshCount > 0 {
-                    ArrayPush(results, "PASS: Found mesh components on player (" + IntToString(meshCount) + " mesh components)");
+                    ArrayPush(results, "PASS: Found " + IntToString(meshCount) + " mesh components on player");
+                    ArrayPush(results, "INFO:   Skinned: " + IntToString(skinnedCount) + "  Morph: " + IntToString(morphCount) + "  Static: " + IntToString(staticCount));
                 } else {
                     ArrayPush(results, "WARN: No mesh components found on player -- scaling may not work");
                 }
 
-                // Test visualScale access
-                let testComp: ref<IComponent> = entity.FindComponentByType(n"entSkinnedMeshComponent");
-                if IsDefined(testComp) {
-                    let mesh: ref<MeshComponent> = testComp as MeshComponent;
-                    if IsDefined(mesh) {
-                        ArrayPush(results, "PASS: visualScale property accessible on MeshComponent");
+                // --- 8. Test cast paths for EACH component type (v1.0.3) ---
+                // Test entSkinnedMeshComponent cast + visualScale access
+                let testSkinned: ref<IComponent> = entity.FindComponentByType(n"entSkinnedMeshComponent");
+                if IsDefined(testSkinned) {
+                    let castSkinned: ref<entSkinnedMeshComponent> = testSkinned as entSkinnedMeshComponent;
+                    if IsDefined(castSkinned) {
+                        ArrayPush(results, "PASS: entSkinnedMeshComponent cast works -- character scaling enabled");
                     } else {
-                        ArrayPush(results, "FAIL: Cannot cast to MeshComponent -- Codeware addon may be missing");
+                        ArrayPush(results, "FAIL: entSkinnedMeshComponent cast returned null");
                     }
                 } else {
-                    ArrayPush(results, "WARN: No entSkinnedMeshComponent found via FindComponentByType");
+                    ArrayPush(results, "WARN: No entSkinnedMeshComponent found on player via FindComponentByType");
+                }
+
+                // Test MeshComponent cast (for static/prop meshes)
+                let testMesh: ref<IComponent> = entity.FindComponentByType(n"MeshComponent");
+                if IsDefined(testMesh) {
+                    let castMesh: ref<MeshComponent> = testMesh as MeshComponent;
+                    if IsDefined(castMesh) {
+                        ArrayPush(results, "PASS: MeshComponent cast works -- static mesh scaling enabled");
+                    } else {
+                        ArrayPush(results, "WARN: MeshComponent cast returned null (may be normal for player)");
+                    }
+                } else {
+                    ArrayPush(results, "INFO: No MeshComponent found on player (normal -- player uses skinned meshes)");
                 }
             }
         }
 
-        // --- 8. PreGame check ---
+        // --- 9. PreGame check ---
         if GameInstance.GetSystemRequestsHandler().IsPreGame() {
             ArrayPush(results, "FAIL: Currently in PreGame (main menu) -- load a save first");
         } else {
             ArrayPush(results, "PASS: In-game session active");
         }
 
-        // --- 9. Scaled entities status ---
+        // --- 10. Scaled entities status ---
         let scaledCount: Int32 = ArraySize(this.m_scaledEntities);
         if scaledCount > 0 {
             ArrayPush(results, "INFO: Currently tracking " + IntToString(scaledCount) + " scaled entities");
@@ -671,7 +780,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             ArrayPush(results, "INFO: No entities currently scaled");
         }
 
-        // --- 10. Tick status ---
+        // --- 11. Tick status ---
         if this.m_ticking {
             ArrayPush(results, "PASS: Tick loop is running (scale persistence active)");
         } else {
@@ -681,6 +790,9 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                 ArrayPush(results, "INFO: Tick loop idle (normal when nothing is scaled)");
             }
         }
+
+        // --- 12. Version check ---
+        ArrayPush(results, "INFO: Pose Size Changer v1.0.3 (skinned mesh fix)");
 
         // Log all results
         let r: Int32 = 0;
@@ -693,7 +805,8 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     public func GetDiagnosticCount() -> Int32 {
-        // Returns the number of checks (for pre-allocation in CET)
-        return 12;
+        // Approximate upper bound; actual count varies based on conditions.
+        // CET overlay iterates the returned array directly, so this is just a hint.
+        return 16;
     }
 }

@@ -271,6 +271,7 @@ The framework mods (RED4ext, Redscript, Codeware, CET) can stay -- other mods li
 
 ## Version History
 
+- **v1.0.3** -- CRITICAL: Fixed character scaling. entSkinnedMeshComponent does NOT inherit from MeshComponent (they are siblings under IVisualComponent). Previous versions cast to MeshComponent which always returned null for character meshes. Fixed by exposing visualScale on entSkinnedMeshComponent and entMorphTargetSkinnedMeshComponent via @addField. Enhanced diagnostics with per-component-type counts and cast path verification. Improved entity resolution fallback.
 - **v1.0.2** -- Critical bug fixes (EntityID.ToHash, CET ImGui compatibility), added diagnostics panel, mod conflict detection, full installation guide
 - **v1.0.1** -- Optimization pass, FTLog fix, per-frame targeting fix, mesh component coverage, stale entity cleanup
 - **v1.0.0** -- Initial release

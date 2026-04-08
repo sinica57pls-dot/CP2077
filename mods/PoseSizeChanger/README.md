@@ -59,12 +59,29 @@ Edit `r6/scripts/PoseSizeChanger/Config.reds`:
 - `ResetKey()` -- default F10
 - `TickInterval()` -- default 0.5s (scale reapplication frequency)
 
+## Diagnostics
+
+The mod includes a built-in workability checker. Open the CET overlay (~) and click **Run Diagnostics** to verify:
+
+- System status and session state
+- All framework dependencies (RED4ext, Redscript, Codeware, CET)
+- Mesh component detection per type (skinned, morph, static)
+- Cast path verification for each component type
+- Tick loop status and scale persistence
+
 ## Compatibility
 
 - Works alongside any pose pack (ArchiveXL .archive/.xl/.yaml based)
 - Works alongside AMM (detects AMM-spawned entities)
 - Compatible with the separate PhotoModeScale mod (but you don't need both)
 - No conflicts with vanilla game systems
+
+## Changelog
+
+- **v1.0.3** -- CRITICAL FIX: Character scaling now actually works. Previous versions cast skinned mesh components to MeshComponent (always returned null because they are sibling classes, not parent-child). Fixed by exposing visualScale on entSkinnedMeshComponent and entMorphTargetSkinnedMeshComponent via @addField. Enhanced diagnostics with per-component-type breakdown and cast verification.
+- **v1.0.2** -- Diagnostics panel, mod conflict detection, pcall crash safety
+- **v1.0.1** -- Replaced FTLog with ModLog, added mesh component types, stale entity cleanup
+- **v1.0.0** -- Initial release
 
 ## License
 
