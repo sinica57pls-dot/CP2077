@@ -1,7 +1,7 @@
 module PoseSizeChanger
 
 // ---------------------------------------------------------------------------
-//  Pose Size Changer System  v1.0.3
+//  Pose Size Changer System  v1.0.4
 // ---------------------------------------------------------------------------
 //
 //  AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
@@ -11,7 +11,7 @@ module PoseSizeChanger
 //  3. The scale persists through pose changes
 //  4. Press F10 to reset that character back to normal
 //
-//  v1.0.3 fixes:
+//  v1.0.4 fixes:
 //    CRITICAL: entSkinnedMeshComponent does NOT inherit from MeshComponent.
 //    They are siblings under IVisualComponent. The `comp as MeshComponent`
 //    cast silently returned null for ALL character meshes (body, head,
@@ -26,7 +26,6 @@ module PoseSizeChanger
 //    - Added entCharacterCustomizationSkinnedMeshComponent support
 //    - Diagnostics now tests the ACTUAL cast paths used for scaling
 //    - Diagnostics reports per-component-type counts
-//    - FloatToStringPrec helper for safe float-to-string conversion
 //    - Fixed m_ticking race: clear flag BEFORE checking conditions
 //    - ResolveEntity now checks all DynamicEntitySystem tags as fallback
 //
@@ -149,7 +148,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
         this.m_active = true;
 
-        ModLog(n"PoseSizeChanger", "v1.0.3 ready. F9 = scale target, F10 = reset target.");
+        ModLog(n"PoseSizeChanger", "v1.0.4 ready. F9 = scale target, F10 = reset target.");
     }
 
     // ------------------------------------------------------------------
@@ -445,7 +444,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Mesh component scaling  (v1.0.3 -- FIXED)
+    //  Mesh component scaling  (v1.0.4 -- FIXED)
     // ------------------------------------------------------------------
     //
     //  CRITICAL FIX: The class hierarchy in CP2077 is:
@@ -466,7 +465,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     //  v1.0.2 and earlier: `comp as MeshComponent` -> null for ALL character
     //  meshes. The mod literally did nothing for characters.
     //
-    //  v1.0.3: We now cast to the correct concrete types:
+    //  v1.0.4: We now cast to the correct concrete types:
     //    - MeshComponent for static/prop meshes (visualScale from Codeware @addField)
     //    - entSkinnedMeshComponent for character body/head (visualScale from our @addField)
     //    - entMorphTargetSkinnedMeshComponent for morph targets (same)
@@ -632,7 +631,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Diagnostics  --  workability checker  (v1.0.3 -- enhanced)
+    //  Diagnostics  --  workability checker  (v1.0.4 -- enhanced)
     // ------------------------------------------------------------------
 
     public func RunDiagnostics() -> array<String> {
@@ -698,7 +697,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             ArrayPush(results, "FAIL: DelaySystem unavailable -- scale persistence will not work");
         }
 
-        // --- 7. Mesh component access on player (v1.0.3: per-type breakdown) ---
+        // --- 7. Mesh component access on player (v1.0.4: per-type breakdown) ---
         if IsDefined(player) {
             let entity: ref<Entity> = player as Entity;
             if IsDefined(entity) {
@@ -736,7 +735,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                     ArrayPush(results, "WARN: No mesh components found on player -- scaling may not work");
                 }
 
-                // --- 8. Test cast paths for EACH component type (v1.0.3) ---
+                // --- 8. Test cast paths for EACH component type (v1.0.4) ---
                 // Test entSkinnedMeshComponent cast + visualScale access
                 let testSkinned: ref<IComponent> = entity.FindComponentByType(n"entSkinnedMeshComponent");
                 if IsDefined(testSkinned) {
@@ -792,7 +791,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         }
 
         // --- 12. Version check ---
-        ArrayPush(results, "INFO: Pose Size Changer v1.0.3 (skinned mesh fix)");
+        ArrayPush(results, "INFO: Pose Size Changer v1.0.4 (skinned mesh fix)");
 
         // Log all results
         let r: Int32 = 0;
@@ -804,9 +803,9 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         return results;
     }
 
+    // DEPRECATED: Not used by CET overlay (it iterates RunDiagnostics() directly).
+    // Kept for backward compat; returns approximate count hint.
     public func GetDiagnosticCount() -> Int32 {
-        // Approximate upper bound; actual count varies based on conditions.
-        // CET overlay iterates the returned array directly, so this is just a hint.
         return 16;
     }
 }

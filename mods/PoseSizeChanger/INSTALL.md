@@ -1,6 +1,6 @@
 # Pose Size Changer -- Full Installation Guide
 
-This guide walks you through installing **Pose Size Changer v1.0.2** and all of its dependencies from scratch.
+This guide walks you through installing **Pose Size Changer v1.0.4** and all of its dependencies from scratch.
 
 ---
 
@@ -65,7 +65,7 @@ CET provides the in-game overlay UI (the ~ menu) and Lua scripting for the contr
 
 ### Step 1: Download
 
-Download `PoseSizeChanger-v1.0.2.zip` from the GitHub releases page:
+Download `PoseSizeChanger-v1.0.4.zip` from the GitHub releases page:
 https://github.com/sinica57pls-dot/CP2077/releases
 
 ### Step 2: Extract
@@ -271,6 +271,7 @@ The framework mods (RED4ext, Redscript, Codeware, CET) can stay -- other mods li
 
 ## Version History
 
+- **v1.0.4** -- Audit cleanup: thorough static analysis of 812 lines Redscript + 418 lines Lua verified all APIs, syntax, lifecycle, and race conditions. Removed phantom FloatToStringPrec comment, fixed INSTALL.md version references, marked dead GetDiagnosticCount() as deprecated. No functional changes; v1.0.3 core logic confirmed correct.
 - **v1.0.3** -- CRITICAL: Fixed character scaling. entSkinnedMeshComponent does NOT inherit from MeshComponent (they are siblings under IVisualComponent). Previous versions cast to MeshComponent which always returned null for character meshes. Fixed by exposing visualScale on entSkinnedMeshComponent and entMorphTargetSkinnedMeshComponent via @addField. Enhanced diagnostics with per-component-type counts and cast path verification. Improved entity resolution fallback.
 - **v1.0.2** -- Critical bug fixes (EntityID.ToHash, CET ImGui compatibility), added diagnostics panel, mod conflict detection, full installation guide
 - **v1.0.1** -- Optimization pass, FTLog fix, per-frame targeting fix, mesh component coverage, stale entity cleanup

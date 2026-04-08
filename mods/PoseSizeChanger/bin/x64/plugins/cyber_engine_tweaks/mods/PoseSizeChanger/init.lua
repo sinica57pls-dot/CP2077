@@ -1,10 +1,10 @@
 --[[
-    Pose Size Changer v1.0.3  --  CET Integration Layer
+    Pose Size Changer v1.0.4  --  CET Integration Layer
     =====================================================
 
     AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
 
-    v1.0.3 fixes:
+    v1.0.4 fixes:
       - Updated version strings
       - Diagnostics now show per-component-type breakdown
       - Better error messages for the skinned mesh fix
@@ -398,7 +398,7 @@ registerForEvent("onDraw", function()
     ImGui.Text("Use 'Apply to Target' or F9 to scale them.")
     ImGui.Text("Scale persists through pose changes!")
     ImGui.Spacing()
-    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v1.0.3")
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v1.0.4")
 
     ImGui.End()
 end)
@@ -407,7 +407,7 @@ end)
 -- CET lifecycle
 -- -----------------------------------------------------------------------
 registerForEvent("onInit", function()
-    print("[PoseSizeChanger] CET mod loaded. v1.0.3")
+    print("[PoseSizeChanger] CET mod loaded. v1.0.4")
 end)
 
 registerForEvent("onShutdown", function()
