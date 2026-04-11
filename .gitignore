@@ -10,3 +10,5 @@
 ~$*
 *.log
 CMakeLists.txt
+
+*.pdf

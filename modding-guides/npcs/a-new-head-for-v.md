@@ -1,0 +1,278 @@
+---
+description: How to change V's head
+---
+
+# For V - Changing V's Head
+
+## Summary
+
+**Published:** September 30 2023 by [mana vortex](https://app.gitbook.com/u/NfZBoxGegfUqB33J9HXuCs6PVaC3 "mention")\
+Last documented edit: Oct 20 2024 by [mana vortex](https://app.gitbook.com/u/NfZBoxGegfUqB33J9HXuCs6PVaC3 "mention")
+
+This guide will teach you how to edit the player head to create custom head shapes. You don't need to understand the complex parts of the process, as long as you **follow the instructions to the letter**.
+
+{% hint style="info" %}
+If you want to edit other files for V, you may be able to find their paths in [cheat-sheet-body.md](../../for-mod-creators-theory/references-lists-and-overviews/cheat-sheet-body.md "mention") or one of the surrounding pages.
+{% endhint %}
+
+## Step 0: Prerequisites
+
+* You have [Blender](https://www.blender.org/download/) installed and know your way around it (if you don't, see [blender-getting-started](../../for-mod-creators-theory/3d-modelling/blender-getting-started/ "mention"))
+* You have [a Wolvenkit project](https://app.gitbook.com/s/-MP_ozZVx2gRZUPXkd4r/wolvenkit-app/usage/wolvenkit-projects#create-a-new-wolvenkit-mod-project)
+* You have the [wolvenkit-blender-io-suite](../../for-mod-creators-theory/modding-tools/wolvenkit-blender-io-suite/ "mention") installed and ready to go
+
+{% hint style="info" %}
+This guide assumes that you'll be starting from 0. If you want to use character creator options, please reference the [npv-preparing-the-head-in-blender.md](npv-v-as-custom-npc/npv-preparing-the-head-in-blender.md "mention") to the point where you apply all shapekeys.
+{% endhint %}
+
+<details>
+
+<summary>Wait, how does this work? Aren't my V's values in the save file?</summary>
+
+Yesn't. Your character's looks are actually a bunch of numbers. The game will translate these numbers to **offsets**, which corresponds to **morphs** (partial deforms) on the player base head.
+
+Compared to other games like BG3, this means that Cyberpunk uses only one head mesh and lets you have a character creator. The downside is that making custom heads is slightly more involved than it is in comparable games.
+
+This guide will show you the following things:
+
+* Get the correct files into Blender
+* Apply the numeric presets from the character creator (**shapekeys**)
+* Export the files again
+* Import them back into Wolvenkit
+
+</details>
+
+## Step 0: Custom head files
+
+{% hint style="info" %}
+You only need this if you are using a custom head sculpt or EKT Character creator. Otherwise, read on under [#step-1-preparing-the-files](a-new-head-for-v.md#step-1-preparing-the-files "mention").
+{% endhint %}
+
+1. Switch the Asset Browser to the [Mod Browser](https://app.gitbook.com/s/-MP_ozZVx2gRZUPXkd4r/wolvenkit-app/editor/asset-browser#mod-browser)
+2. [Search](https://app.gitbook.com/s/-MP_ozZVx2gRZUPXkd4r/wolvenkit-app/usage/wolvenkit-search-finding-files) for the morphtarget files for your body gender (you can find the paths under [cheat-sheet-head](../../for-mod-creators-theory/references-lists-and-overviews/cheat-sheet-head/ "mention") -> [#head-file-paths](../../for-mod-creators-theory/references-lists-and-overviews/cheat-sheet-head/#head-file-paths "mention")):
+
+```
+base\characters\head\player_base_heads\player_female_average > .morphtarget
+base\characters\head\player_base_heads\player_man_average > .morphtarget
+```
+
+2. Add the files to your project
+3. Overwrite the files in the template project with the files you just added
+
+You now have the modded `.morphtarget` files in your project and are ready to proceed.
+
+## Step 1: Preparing the files
+
+### 1.1 Exporting from Wolvenkit
+
+{% hint style="info" %}
+You can consult [cheat-sheet-head](../../for-mod-creators-theory/references-lists-and-overviews/cheat-sheet-head/ "mention")-> [#head-file-paths](../../for-mod-creators-theory/references-lists-and-overviews/cheat-sheet-head/#head-file-paths "mention") for more information about head files. This is not necessary for the scope of this guide.
+{% endhint %}
+
+1. [Add](https://app.gitbook.com/s/-MP_ozZVx2gRZUPXkd4r/wolvenkit-app/editor/asset-browser#adding-files-to-projects) **all** morphtarget files for your body gender to your Wolvenkit project:
+
+<table><thead><tr><th width="147">body gender</th><th>Asset Browser search query</th></tr></thead><tbody><tr><td>fem</td><td><code>base\characters\head\player_base_heads\player_female_average > .morphtarget</code></td></tr><tr><td>masc</td><td><code>base\characters\head\player_base_heads\player_man_average > .morphtarget</code></td></tr></tbody></table>
+
+{% hint style="danger" %}
+Make sure to include **all** morphtargets in the folder: cyberware, tattoos, scars, and for mascV, beards.
+{% endhint %}
+
+2. Export them all via [Wolvenkit Export Tool](https://app.gitbook.com/s/-MP_ozZVx2gRZUPXkd4r/wolvenkit-app/tools/tools-import-export#export-tool) (you can find step-by-step instructions in the NPV guide under [#step-2-exporting-head](npv-v-as-custom-npc/npv-preparing-the-head-in-blender.md#step-2-exporting-head "mention"))
+
+### 1.2 Importing into Blender
+
+1. Use the [wolvenkit-blender-io-suite](../../for-mod-creators-theory/modding-tools/wolvenkit-blender-io-suite/ "mention") to [import](../../for-mod-creators-theory/modding-tools/wolvenkit-blender-io-suite/wkit-blender-plugin-import-export.md#importing-into-blender) all of your `morphtarget.glb` files. You should see a drop-down menu containing the option Cyberpunk GLTF (.gltf/.glb) when hovering over Import. Also, when selecting the files make sure to import from the raw folder and not the archive. Make sure to un-check `With Materials` in the right sidebar - we won't need them, and they'll only slow down the import process.
+
+<figure><img src="../../.gitbook/assets/head_sculpting_guide_with_materials.png" alt=""><figcaption></figcaption></figure>
+
+2. If there is a collection with the name `glTF_not_exported`, collapse or delete it - we don't need all those things.
+
+## Step 2: Sculpting prep
+
+{% hint style="info" %}
+If you are trying to port an NPC's head, you can skip straight to step 4 and read the expandable at the beginning
+{% endhint %}
+
+<details>
+
+<summary>If you have applied shapekeys</summary>
+
+If you come from the NPV guide and have used the script to apply character creator presets, you have **lost all shapekeys** and need to restore them.
+
+For all armatures (collections) in your blend file, do the following:
+
+1.  Import the `.morphtarget.glb` again. This will create a collection with the same name and the `.001` suffix:
+
+    <figure><img src="../../.gitbook/assets/head_sculpting_guide_merging_meshes.png" alt="" width="166"><figcaption></figcaption></figure>
+2. For each mesh in the collection, repeat the following steps:
+   1. Select it
+   2. Switch to Edit Mode (Hotkey: `Tab`)
+   3. Select all vertices (Hotkey: `A`) and delete them (Hotkey: `X`)
+   4. Switch back to Object Mode (Hotkey: `Tab`)
+   5. Select the empty mesh, then (Ctrl+click) the corresponding mesh without shapekeys
+   6. **Join** into the empty mesh (Hotkey: `Ctrl+J`). You now have a re-shaped mesh with shapekeys.
+
+</details>
+
+You now have between 32 (femV) and 45 (mascV) collections in Blender. That's a lot of resculpting! Fortunately, we don't have to do everything by hand.
+
+### Sculpting prep: A dedicated mesh
+
+We'll make use of Blender's modifiers, specifically `Surface Deform`, to do the heavy lifting for us. For that purpose, we'll use a **dedicated sculpting mesh**, and make everything else take its shape.
+
+For that, we will use the **base head mesh.** Follow along to create a copy.
+
+1. Make sure that you are in **Object mode**
+2. In the **Outliner** at the top right of your viewport, find the collection with the name of `h0_000_pXa__morphs.morphtarget` (x being w or m) and **expand** it.
+3. Find the mesh starting with submesh\_00\_LOD\_1 (it can have a suffix like .001), and select it by clicking on it
+4. Duplicate it (Hotkey: `Shift+D`, `ESC`)
+5. Rename your duplicate to e.g. `sculptme`. This is the mesh we'll be editing.
+6. Select sculptme, then switch to the `Data` tab of `Properties` (at the bottom right of your viewport), and disable `Shape Key Edit Mode`:
+
+<figure><img src="../../.gitbook/assets/head_sculpt_shape_key_edit_mode.png" alt=""><figcaption></figcaption></figure>
+
+Now, we're ready to hook up the magic.
+
+### Sculpting prep: Modifiers
+
+Each mesh in your .blend file needs a `Surface Deform` modifier that binds it to `sculptme`. Fortunately, you don't have to do that by hand!
+
+{% hint style="danger" %}
+Make sure to fully understand this part as not getting this right will lead to irreversible errors when exporting later.
+{% endhint %}
+
+{% hint style="warning" %}
+Make sure that `sculptme` is still selected in the Outliner - the script will target the wrong mesh if it isn't.
+{% endhint %}
+
+1. The script you need is [add\_surface\_deform.py](https://github.com/manavortex/cyberpunk2077/blob/master/python/sculpting_convenience/surface_deform/add_surface_deform.py) from mana's github.
+2. Follow the [blender-running-python-scripts.md](../../for-mod-creators-theory/3d-modelling/blender-getting-started/blender-running-python-scripts.md "mention") guide with that script, then come back here.
+3. After clicking play, all meshes but `sculptme` will now have a `surface deform` modifier:
+4. Make sure to check the meshes under different morphtargets (not only the head) to make sure the modifier shows up. If done incorrectly, your meshes won't change shape and you can start over.
+
+<figure><img src="../../.gitbook/assets/head_sculpting_guide_surface_deform.png" alt="" width="332"><figcaption><p>This modifier will deform all your meshes together with <code>sculptme</code>.</p></figcaption></figure>
+
+4. You can now **hide** all collections that you don't want to see in the Outliner.
+5. I usually only keep `sculptme`, eyes, and eyebrows visible (hiding the original head mesh)
+
+<figure><img src="../../.gitbook/assets/head_sculpting_image_visibility.png" alt="" width="324"><figcaption></figcaption></figure>
+
+## Step 3: The actual sculpting
+
+This is the part where you [draw the rest of the owl](https://knowyourmeme.com/memes/how-to-draw-an-owl).
+
+{% hint style="info" %}
+Save your .blend file before you start with this. In fact, save it twice. You can thank me later.
+{% endhint %}
+
+You can use the **sculpt mode** to change the shape of `sculptme` until you're satisfied.
+
+This guide won't go into details (yet), except to tell you that the `Elastic Deform` tool is your best friend here. Check [mesh-sculpting-techniques.md](../../for-mod-creators-theory/3d-modelling/mesh-sculpting-techniques.md "mention") for tips and tricks how to go about this.
+
+<figure><img src="../../.gitbook/assets/mesh_sculpting_guide_safe_to_sculpt.png" alt="" width="375"><figcaption></figcaption></figure>
+
+## Step 4: Exporting from Blender
+
+{% hint style="danger" %}
+As of October 2024, Wolvenkit may run into issues exporting edited morphtargets, so make sure to hang onto your .blend file!
+{% endhint %}
+
+{% hint style="info" %}
+This is an **excellent** time for a save, because the script will remove the surface deform modifiers.
+{% endhint %}
+
+<details>
+
+<summary>If you want to use an NPC's head</summary>
+
+For every morphtarget that you want to replace, do the following:
+
+1. Import the .morphtarget into Blender
+2. Import the corresponding NPC mesh into Blender
+
+For every submesh inside the morphtarget, do the following:
+
+1. Select the morphtarget
+2. Enter edit mode (Hotkey: `Tab`)
+3. Select all vertices (Hotkey: `A`)
+4. Delete all vertices (Hotkey: `X`, `Enter`)
+5. Switch back to object mode (Hotkey: `Tab`)
+6. Ctrl+click on the NPC mesh in the 3d viewport or the Outliner
+7. Join it into the empty .morphtarget (Hotkey: `Ctrl+J`)
+
+You can now go straight to [#id-4.2-exporting-the-morphtargets-from-blender](a-new-head-for-v.md#id-4.2-exporting-the-morphtargets-from-blender "mention")
+
+</details>
+
+Before you can export your sculpt, you need to **apply** the surface deform modifiers, because Wolvenkit (and Cyberpunk) will flat-out ignore them.
+
+Fortunately, you can do this by script as well.
+
+### 4.1 Applying the surface deform
+
+1. Find [apply\_surface\_deform.py](https://github.com/manavortex/cyberpunk2077/blob/master/python/sculpting_convenience/surface_deform/apply_surface_deform.py) on mana's github
+2. Follow the [blender-running-python-scripts.md](../../for-mod-creators-theory/3d-modelling/blender-getting-started/blender-running-python-scripts.md "mention") guide with that script, then come back here.
+3. After clicking the play button, your mesh will have changed shape for good.
+
+### 4.2 Exporting the morphtargets from Blender
+
+You can now export the morphtargets.
+
+1. For each armature, select **all** submeshes inside
+2. Head over to the top left side, click file then export and select the option Cyberpunk GLB
+3.  Use the [wolvenkit-blender-io-suite](../../for-mod-creators-theory/modding-tools/wolvenkit-blender-io-suite/ "mention")'s default settings and **overwrite** the corresponding `morphtarget.glb`
+
+    <figure><img src="../../.gitbook/assets/npv_basehead_export_from_blender.png" alt=""><figcaption></figcaption></figure>
+4. **Import** the files back into Wolvenkit via [Import Tool](https://app.gitbook.com/s/-MP_ozZVx2gRZUPXkd4r/wolvenkit-app/tools/tools-import-export#import-tool). This **should** simply work! If it does not, you might have to overwrite the mesh file as well - see the [morphtargets](../../for-mod-creators-theory/3d-modelling/morphtargets.md#editing-morphtargets) page for instructions.
+5. You can also look at the log section of Wolvenkit as if an error occurs, the text will be shown in red
+
+## Step 5: Testing
+
+Now [install your mod](https://app.gitbook.com/s/-MP_ozZVx2gRZUPXkd4r/wolvenkit-app/menu/toolbar#install-and-launch) and start the game.
+
+If everything has worked, you should now be able to create a new V with your new head shape. (Loading into an existing V might cause crashes)
+
+{% hint style="info" %}
+To see the exact mesh you have in Blender, set all sliders to 1
+{% endhint %}
+
+Otherwise, the right place to ask for help is `#mod-dev-chat` on the [redmodding Discord server](https://discord.gg/redmodding).
+
+Happy modding!
+
+## Step 6 (optional): Disabling the character creator
+
+By turning off character creator slides, you can stop Cyberpunk from crashing.
+
+{% hint style="info" %}
+As of 8.15, this will **break Wolvenkit export**. Before exporting, you need to set the numTargets back to what WKit expects it to be.
+{% endhint %}
+
+For each `.morphtarget`, you can change this value to **0**:
+
+<figure><img src="../../.gitbook/assets/head_sculpting_disable_morphing.png" alt=""><figcaption></figcaption></figure>
+
+## Troubleshooting
+
+### I can't export my morphtarget anymore!
+
+If you get an exception about `blob.header.numTargets`: check [#step-6-optional-disabling-the-character-creator](a-new-head-for-v.md#step-6-optional-disabling-the-character-creator "mention").
+
+Otherwise: [Known issue](https://github.com/WolvenKit/WolvenKit/issues/1604) as of Wolvenkit 8.15 - future Wolvenkit versions will fix this. It's why you were supposed to hang on to that .blend for dear life. :)
+
+### It crashes when loading into a savegame!
+
+A known risk of custom heads, because custom cyberware/beards/tattoos won't play nice with this. See [#step-6-optional-disabling-the-character-creator](a-new-head-for-v.md#step-6-optional-disabling-the-character-creator "mention") for an (admittedly heavy-handed) solution.
+
+### My pupils are fucked!
+
+Eyeballs do not take kindly to sculpting. You could adjust the pupil shape by editing rig bones, but let's first try a less involved solution (tl;dr: replace the eyeballs with the original game eyeballs and move them into the right position)
+
+1. Create a copy of your edited eye`.morphtarget`&#x20;
+2. Overwrite the original file with the base game file (right-click, or just add the original file to your mod again)
+3. Export them both; then import them into Blender
+4. Select the basegame morphtarget, and enter edit mode (Hotkey: `Tab`)
+5. Use the **Movement Tool** to position both eyeballs directly on top of your edited morphtarget. (Scaling is okay, but if you rotate, V will be cross-eyed)
+6. Once you have matched the position, **delete your reference**, and select your edited mesh again
+7. Re-parent the edited submesh to your eye mesh's armature (Blender Addon: [Change Armature Target](../../for-mod-creators-theory/modding-tools/wolvenkit-blender-io-suite/#change-armature-target))
+8. Now you should have functioning pupils!

@@ -1,0 +1,270 @@
+---
+description: How to create normal maps (bumpmaps) with Blender
+---
+
+# Self-made normal maps
+
+## Summary <a href="#summary" id="summary"></a>
+
+**Published** January 06 2023 by @manavortex\
+**Last documented update:** January 20 2024 by @manavortex
+
+This guide will teach you how to create a custom normal map.
+
+### Wait, this isn't what I want!
+
+* For general information, check [normal-maps-in-cyberpunk.md](../../../for-mod-creators-theory/materials/textures/normal-maps-in-cyberpunk.md "mention")
+* Or maybe you want to know about  [cyberpunk-shaders-in-blender.md](../../../for-mod-creators-theory/materials/cyberpunk-shaders-in-blender.md "mention")
+* If you want to create a `.mlmask` instead, see [custom-multilayermasks.md](../custom-multilayermasks.md "mention")
+* Otherwise, you can use the wiki's search function — it uses an LLM and is actually quite useful.
+
+## Prerequisites
+
+|                     |                                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Version             | [Blender](https://www.blender.org/download/)>= 4.2                                                                                                                                                                       |
+| Assumed skill level | <ul><li>You know what a <a href="https://en.wikipedia.org/wiki/Normal_mapping">normal map</a> is</li><li>You're able to draw stick figures</li><li>You are not afraid of Blender</li><li>You know how to read.</li></ul> |
+
+{% hint style="info" %}
+If you don't have Photoshop, [Photopea](https://www.photopea.com/) offers almost the same thing online for free.
+{% endhint %}
+
+{% hint style="info" %}
+For a free tool for faster normal baking, check out [xnormal](https://xnormal.net/).
+{% endhint %}
+
+## Step 0: Preparing the viewport
+
+1. [Export your mesh](../../../for-mod-creators-theory/modding-tools/wolvenkit-blender-io-suite/wkit-blender-plugin-import-export.md#export-from-wolvenkit) from WolvenKit
+2. [Import it into Blender](../../../for-mod-creators-theory/modding-tools/wolvenkit-blender-io-suite/wkit-blender-plugin-import-export.md#importing-into-blender) (<mark style="color:yellow;">**do not import materials**</mark>)
+3. Select the object
+4. Make sure your material has exactly one material (see the end result in the screenshot at step 5):
+   * if there are no materials: Awesome, you passed the reading comprehension test! Create one by clicking the `+` button.
+   * If there are materials: You failed the reading comprehension test and I am very disappointed. Delete all but one by selecting them and clicking the `-` button.
+5. Assign a material to the only remaining slots:\
+   ![](../../../.gitbook/assets/normal_maps_assign_material.png)
+6. Switch to the "Shading" perspective and add an "Image Texture". Select your image by clicking the corresponding button:\
+   ![](../../../.gitbook/assets/normal_maps_shading_1.png)
+7. The viewport should already be set to "Solid". Click on the dropdown arrow next to the options and select "Texture" from the list.
+
+<figure><img src="../../../.gitbook/assets/normal_maps_viewport_shading.png" alt=""><figcaption><p>You will now get the selected texture directly as an overlay.</p></figcaption></figure>
+
+## Step 1: The Displacement Map
+
+As the first step, we create a [**Displacement Map**](https://de.wikipedia.org/wiki/Displacement_Mapping) for our 3d object. This black and white image will turn your mesh into an object with actual (simulated) depth, which we will then "bake" into a normal map.
+
+<figure><img src="https://upload.wikimedia.org/wikipedia/commons/a/a4/Displacement.jpg" alt=""><figcaption><p>image source: <a href="https://de.wikipedia.org/wiki/Displacement_Mapping">Wikipedia</a></p></figcaption></figure>
+
+{% hint style="info" %}
+This tutorial won't cover the process of how to draw such a map in-depth, but there will be a few tips how to do that in Blender.
+{% endhint %}
+
+{% hint style="warning" %}
+The displacement image should be saved in 32 bit image depth rather than the usual 8. This will yield better results with the normal maps.
+{% endhint %}
+
+### Texture Paint Mode
+
+The Texture Paint perspective lets you draw directly on your mesh's surface:
+
+<figure><img src="../../../.gitbook/assets/normal_maps_texture_paint.png" alt=""><figcaption><p>You will probably want to fix this up in Photoshop (Photopea).</p></figcaption></figure>
+
+### UV edit mode
+
+To see how the mesh is projected on your image, you can check out the UV edit mode.
+
+Switch to "Edit" (shortcut: Tab) and select all vertices (shortcut: ctrl+A). You will now see them projected on the texture:
+
+<figure><img src="../../../.gitbook/assets/normal_maps_uv_editing (2).png" alt=""><figcaption></figcaption></figure>
+
+{% hint style="info" %}
+Feel free to change the UV mapping. You can [export](../../../for-mod-creators-theory/3d-modelling/exporting-and-importing-meshes/#wolvenkit-.gdb-1) this back into Cyberpunk!
+{% endhint %}
+
+## Step 2: High Poly and Low Poly meshes
+
+Once you are done with your displacement map and the UV mapping looks like you want it to, it's time for the next step: projecting!
+
+{% hint style="warning" %}
+Take your displacement map and create a **slightly blurry version** of it. This will prevent artifacts on the normal map, as the algorithm doesn't like perfectly straight edges.
+{% endhint %}
+
+{% hint style="info" %}
+I create a duplicate of my entire armature, just to make certain that I don't accidentally overwrite anything I want to keep. Only work on the new object, since we're getting destructive here.
+{% endhint %}
+
+1. Make sure that your viewport is in Object Mode
+2. Select all objects that you want to go on the same normal map, then **join** them together (shortcut: Ctrl+J).
+3. Create a duplicate of this mesh (Ctrl+D, ESC to stop moving), then rename that to "Low Poly".
+4. Select the mesh you duplicated and rename it to "High Poly".
+5. Open the "Modifiers" tab and assign the following modifiers **after** the armature modifier (check screenshot in Step 6)
+   1. **Generate -> Subdivision Surface**\
+      \&#xNAN;_**Levels Viewport:** 2 or so_\
+      \&#xNAN;_**Render:** As many as Blender lets you get away with without crashing, I used 7_\
+      \&#xNAN;_**Advanced:**_\
+      &#xNAN;_**UV Smooth:** Keep Corners, Junctions_\
+      \&#xNAN;_**Boundary Smoothing**: Keep Corners_
+   2. **Deform -> Displace**\
+      \&#xNAN;_**Coordinates**: UV_\
+      \&#xNAN;_**UV Map:** UVMap_\
+      \&#xNAN;_**Direction**: Normal_\
+      \&#xNAN;_**Strength:** -0.002 (you can play around with this)_\
+      \&#xNAN;_**Midlevel:** 0.000_
+6. For the "Displace" Modifier, create a new picture, then click on the two sliders to show this texture in the textures tab\
+   ![](../../../.gitbook/assets/normal_maps_modifiers.png)
+7. Load your blurred texture:\
+   ![](../../../.gitbook/assets/normal_maps_texture_tab.png)
+
+{% hint style="success" %}
+If you hide your "Low Poly" mesh, the modifiers should now let you see creases on your high poly object! Exciting!!
+{% endhint %}
+
+{% hint style="info" %}
+The normal map will only care for relative depth, so keep the creases on your mesh shallow. If you make them too sharp, this can lead to artifacts on the baked normal map.
+{% endhint %}
+
+## Step 3: Prepare the material
+
+Switch to the "Shading" perspective again. Add another image texture and create an image with your target resolution. Call it "Bake" or whatever.
+
+**Remove the link to your material's normal input** - otherwise, it'll bake your normal map into your normal map, and the results won't be pretty.
+
+<figure><img src="../../../.gitbook/assets/normal_maps_shading_2.png" alt=""><figcaption></figcaption></figure>
+
+## Step 4: Prepare the low poly mesh
+
+The high poly mesh needs to be **completely covered** by the low poly one, like plastic wrap. That will normally not be the case yet, so we need to **inflate** the poly mesh:
+
+1. Set the viewport to Object Mode
+2. Select the Low Poly mesh
+3. Switch into Edit Mode (Hotkey: `Tab`)
+4. Select all vertices (Hotkey: `ctrl+A`)
+5. **Optional:** Merge by distance (Hotkey: `M`)
+6. **Fatten** (Hotkey: `Alt+S`, adjust amount of fattening via mouse or by typing it in directly)
+7. Fix up whatever parts didn't fatten correctly by hand.
+
+### If your mesh inflates asymmetrically
+
+1. Undo your action and select all vertices again.
+2. Put the 3d cursor in the center of the selected vertices:\
+   `Right-Click -> Snap Vertices -> Cursor To Selected`
+3.  Set the Pivot Point to 3D cursor (Shortcut: `.` (dot), `Numpad 6`)
+
+    <figure><img src="https://cdn.shortpixel.ai/spai/w_1057+q_lossy+ret_img+to_webp/https://artisticrender.com/wp-content/uploads/2022/11/image-3.png" alt=""><figcaption><p>Set it to "3D Cursor"</p></figcaption></figure>
+4. Fatten again!
+
+## Step 5: Baking
+
+{% hint style="info" %}
+If you're unable to shake a normal map from this process, you might have to resort to Photoshop. (If you don't have it, [photopea.com](https://www.photopea.com/) offers almost the same features for free).
+{% endhint %}
+
+Switch back to Object Mode.
+
+{% hint style="danger" %}
+In Blender, the "active" object is the "previously selected" one. Select your meshes in the following order:
+
+1. Low Poly
+2. High Poly
+{% endhint %}
+
+Find the "Render Properties" tab.
+
+1. At the very top, set "Device" to "GPU Compute" (unless you'd rather bake on your CPU)
+2. Scroll down all the way to "Bake". Configure it like this:
+   1. **Bake Type:** Normal
+   2. **Influence / Space:** Tangent
+   3. **Selected to Active:** Checked
+   4. **Extrusion:** 0.04 m\
+      \&#xNAN;_If your generated normal map shows artifacts, try tweaking this._
+   5. **Max Ray Distance:** 0.04 m\
+      \&#xNAN;_If your generated normal map shows artifacts, try tweaking this._
+   6. **Output / Target:** Image Textures
+   7. Clear Image: Checked
+   8. **Margin / Size:** 16px (or whatever suits you)
+3. **Save. Your. File.**
+
+<figure><img src="../../../.gitbook/assets/normal_maps_final.png" alt=""><figcaption><p>Things are looking like this now? Great, then click "Bake"!</p></figcaption></figure>
+
+{% hint style="info" %}
+Baking takes time (several minutes) and most of your PC's free resources. This is normal.
+{% endhint %}
+
+If everything went well, the image editor on the bottom left will change and display your normal map.
+
+<figure><img src="../../../.gitbook/assets/normals_a_good_result (1).png" alt=""><figcaption><p>A normal map with no artifacts or distortions: this is the kind of result we want.</p></figcaption></figure>
+
+You can export the image via the hamburger menu in the image editor (bottom left panel of the screenshot).
+
+## Step 6: No baking, only photoshop
+
+{% hint style="info" %}
+If you don't have Photoshop, [photopea.com](https://www.photopea.com/) offers almost the same features for free.
+{% endhint %}
+
+So your baking process failed horribly and you're frustrated. Fair, I've been there — 3d edits are finicky. Let's do it in photoshop instead.
+
+1. Load your black and white image into the photo editor of your choice (Photoshop or Photopea).
+2. From the menu, select Filter -> 3d -> Normal Map (Generate Normal Map) in Photoshop)
+3. Photoshop: Click "OK" on the popup (about the 3d features being outdated)
+4. Tweak the parameters until you have a normal map — you want it to be as sharp as possible without artifacts/tearing! Some blur might be necessary.
+5. Click "OK" to apply the changes.
+6. Congratulations, you now have a normal map.
+
+<figure><img src="../../../.gitbook/assets/custom_normal_map_photoshop.png" alt=""><figcaption></figcaption></figure>
+
+## Troubleshooting
+
+{% hint style="info" %}
+This troubleshooting section is for the baking process — the one for normal map textures is [here.](troubleshooting-normal-maps.md)
+{% endhint %}
+
+### My normal map has yellow stripes!
+
+Make sure to [remove the normal mapping](./#step-3-prepare-the-material) from your material.
+
+### My normal map has yellow spots!
+
+{% hint style="success" %}
+First of all, make sure that all your normals are pointing the right way. In the viewport editor, click the "Show Overlays" button and select "Geometry -> Face Orientation" near the bottomn. Blue means outside, red means inside.
+{% endhint %}
+
+The baking process works by capturing the rays of light that bounce between the high poly mesh and the low poly mesh. If you have artifacts, then some of those rays bounced off something else first, which makes them register as inverted. That's the reason why steep creases are a problem — a ray of light might get caught in there and be flipped around.
+
+Check the [troubleshooting step for artifacts](./#my-normal-map-has-artifacts).
+
+### My normal map has artifacts!
+
+* Make sure your displacement map (the one used by the modifier) is **blurred**.
+* Try lowering the strength of the **Displace** modifier on the High Poly mesh, making the creases more shallow.
+* Try changing **Extrusion** and **Max Ray Distance** in the **Bake** settings.
+* If that doesn't help, you could try a [cage](https://www.reddit.com/r/blender/comments/nu7ysh/comment/itym8vw/?utm_source=share\&utm_medium=web2x\&context=3), or otherwise hit Google.
+
+### Blender complains about my meshes
+
+Restart [Step 4](./#step-4-prepare-the-low-poly-mesh) and make sure that you haven't deleted or altered any vertices, other than scaling/inflating the low poly mesh.
+
+### My normal map is inverted on one side
+
+{% hint style="info" %}
+This is a workaround and won't solve the problem. If you know how to fix this for good, please [update this page!](https://app.gitbook.com/invite/-MP5ijqI11FeeX7c8-N8/H70HZBOeUulIpkQnBLK7)
+{% endhint %}
+
+Here is an example of the issue :\
+![](<../../../.gitbook/assets/image (410).png>)
+
+Open the UV of your 3D model and select the vertices that are outside on the left of your UV
+
+\
+![](<../../../.gitbook/assets/image (411).png>)\\
+
+<figure><img src="../../../.gitbook/assets/image (412).png" alt=""><figcaption><p><br>Press P and then click on Selection</p></figcaption></figure>
+
+<figure><img src="../../../.gitbook/assets/image (414).png" alt=""><figcaption></figcaption></figure>
+
+1. Now you have two separate submeshes. Export them both into the same .glb file for Wolvenkit.
+2. Open Photoshop, Paint.net or [Photopea](https://www.photopea.com/) to invert the **green** channel. Save your new .png under a name like \<name\_inverted\_n> \\
+
+<figure><img src="../../../.gitbook/assets/image (11) (1) (1) (1).png" alt=""><figcaption></figcaption></figure>
+
+3. Import your inverted normal map in Wolvenkit. Now, you can create a new material for the normal-inverted parts of your mesh!
