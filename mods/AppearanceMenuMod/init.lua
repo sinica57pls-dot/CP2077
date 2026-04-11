@@ -5440,28 +5440,33 @@ function AMM:CheckCompanionDistances()
           -- Far away: sprint to catch up
           if spawn.currentMoveType ~= "Sprint" then
             spawn.currentMoveType = "Sprint"
-            spawn.activeCommand, _ = Util:FollowTarget(spawn.handle, player, followDistance, "Sprint")
+            spawn.activeCommand, _ = Util:FollowTarget(spawn.handle, player, 0, "Sprint")
           end
           spawn.farDistance = true
         elseif distance > 5 then
           -- Medium distance: jog to close the gap
           if spawn.currentMoveType ~= "Run" then
             spawn.currentMoveType = "Run"
-            spawn.activeCommand, _ = Util:FollowTarget(spawn.handle, player, followDistance, "Run")
+            spawn.activeCommand, _ = Util:FollowTarget(spawn.handle, player, 0, "Run")
           end
           spawn.farDistance = true
         elseif distance > followDistance then
-          -- Slightly far: walk naturally
-          if not spawn.farDistance or spawn.currentMoveType ~= "Walk" then
-            spawn.farDistance = true
+          -- A bit far: walk toward player
+          if spawn.currentMoveType ~= "Walk" then
             spawn.currentMoveType = "Walk"
-            AMM:UpdateFollowDistance()
+            spawn.activeCommand, _ = Util:FollowTarget(spawn.handle, player, 0, "Walk")
           end
+          spawn.farDistance = true
         else
-          -- Close enough: stop and face the player
-          if spawn.farDistance then
+          -- Close enough: cancel follow command so they stand still
+          -- This prevents the NPC from backing away when the player is close
+          if spawn.farDistance or spawn.currentMoveType ~= nil then
             spawn.farDistance = false
             spawn.currentMoveType = nil
+            if spawn.activeCommand then
+              Util:CancelCommand(spawn.handle, spawn.activeCommand)
+              spawn.activeCommand = nil
+            end
             Util:RotateTo(spawn.handle)
           end
         end
