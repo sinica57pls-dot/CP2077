@@ -1,7 +1,7 @@
 module PoseSizeChanger
 
 // ---------------------------------------------------------------------------
-//  Pose Size Changer System  v2.0.0-alpha
+//  Pose Size Changer System  v2.0.0-alpha.2
 // ---------------------------------------------------------------------------
 //
 //  AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
@@ -11,17 +11,18 @@ module PoseSizeChanger
 //  3. The scale persists through pose changes
 //  4. Press F10 to reset that character back to normal
 //
+//  v2.0.0-alpha.2: Enhanced diagnostics & multi-approach refresh
+//    - Fixed Vector3 construction (field-by-field, not constructor args)
+//    - After SetVisualScale, also calls LoadAppearance() to force full
+//      resource reload + RefreshAppearance() for maximum visual update
+//    - Added RunScaleTest() with chunkMask verification to diagnose
+//      whether RefreshAppearance VFunc (0x280) works on skinned meshes
+//    - Added verbose per-component logging for in-game debugging
+//
 //  v2.0.0-alpha: Native C++ backend (RED4ext plugin)
 //    Codeware now exposes visualScale on skinned mesh types at the C++ level
 //    via RTTI expansion. SetVisualScale() triggers RefreshAppearance() to
-//    force the renderer to pick up the new scale. This replaces the prior
-//    @addField-only approach which had no rendering guarantee.
-//
-//    Changes from v2.0.0-alpha:
-//    - Uses Codeware's native SetVisualScale() method instead of direct field write
-//    - @addField declarations moved into Codeware framework
-//    - SetVisualScale() calls RefreshAppearance() internally (C++ level)
-//    - All prior fixes preserved (correct cast paths, race condition fix, etc.)
+//    force the renderer to pick up the new scale.
 //
 // ---------------------------------------------------------------------------
 
@@ -71,6 +72,9 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
     // Last targeted entity info (lightweight cache for CET overlay)
     private let m_lastTargetName: String;
+
+    // Scale test results (for CET overlay display)
+    private let m_scaleTestResults: array<String>;
 
     // ------------------------------------------------------------------
     //  Lifecycle
@@ -123,7 +127,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
         this.m_active = true;
 
-        ModLog(n"PoseSizeChanger", "v2.0.0-alpha ready. F9 = scale target, F10 = reset target.");
+        ModLog(n"PoseSizeChanger", "v2.0.0-alpha.2 ready. F9 = scale target, F10 = reset target.");
     }
 
     // ------------------------------------------------------------------
@@ -199,7 +203,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             let entry: ref<ScaledEntityEntry> = this.m_scaledEntities[i];
             let entity: ref<Entity> = this.ResolveEntity(entry.entityID);
             if IsDefined(entity) {
-                let scaleVec: Vector3 = new Vector3(entry.scaleFactor, entry.scaleFactor, entry.scaleFactor);
+                let scaleVec: Vector3 = this.MakeScaleVector(entry.scaleFactor);
                 this.ScaleMeshComponents(entity, scaleVec);
             } else {
                 // Entity despawned or no longer valid -- remove stale entry
@@ -314,6 +318,29 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
+    //  Helper: safe Vector3 construction
+    // ------------------------------------------------------------------
+    //  Redscript native structs should NOT use `new Vector3(x, y, z)` -
+    //  constructor arguments may be silently ignored. Use field assignment.
+    // ------------------------------------------------------------------
+
+    private func MakeScaleVector(factor: Float) -> Vector3 {
+        let v: Vector3;
+        v.X = factor;
+        v.Y = factor;
+        v.Z = factor;
+        return v;
+    }
+
+    private func MakeDefaultVector() -> Vector3 {
+        let v: Vector3;
+        v.X = 1.0;
+        v.Y = 1.0;
+        v.Z = 1.0;
+        return v;
+    }
+
+    // ------------------------------------------------------------------
     //  Scale management
     // ------------------------------------------------------------------
 
@@ -329,7 +356,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             if Equals(EntityID.ToHash(this.m_scaledEntities[i].entityID), targetHash) {
                 this.m_scaledEntities[i].scaleFactor = factor;
                 // Apply immediately and return (early break)
-                let scaleVec: Vector3 = new Vector3(factor, factor, factor);
+                let scaleVec: Vector3 = this.MakeScaleVector(factor);
                 this.ScaleMeshComponents(entity, scaleVec);
                 this.ScheduleTick();
                 return;
@@ -345,7 +372,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         ArrayPush(this.m_scaledEntities, entry);
 
         // Apply immediately
-        let scaleVec: Vector3 = new Vector3(factor, factor, factor);
+        let scaleVec: Vector3 = this.MakeScaleVector(factor);
         this.ScaleMeshComponents(entity, scaleVec);
 
         // Start ticking to maintain scale
@@ -372,7 +399,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     public func ResetEntity(entityID: EntityID) -> Void {
-        let defaultScale: Vector3 = new Vector3(1.0, 1.0, 1.0);
+        let defaultScale: Vector3 = this.MakeDefaultVector();
         let targetHash: Uint64 = EntityID.ToHash(entityID);
 
         let i: Int32 = 0;
@@ -404,7 +431,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     public func ResetAll() -> Void {
-        let defaultScale: Vector3 = new Vector3(1.0, 1.0, 1.0);
+        let defaultScale: Vector3 = this.MakeDefaultVector();
 
         let i: Int32 = 0;
         while i < ArraySize(this.m_scaledEntities) {
@@ -419,12 +446,18 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Mesh component scaling  (v2.0.0-alpha -- Native C++ backend)
+    //  Mesh component scaling  (v2.0.0-alpha.2 -- Multi-approach refresh)
     // ------------------------------------------------------------------
     //
-    //  Uses Codeware's native SetVisualScale() method which:
-    //    1. Writes visualScale via RTTI property access (works at C++ level)
-    //    2. Calls RefreshAppearance() to force the renderer to pick up the change
+    //  Strategy (try multiple refresh mechanisms for maximum compatibility):
+    //
+    //    1. SetVisualScale() -- C++ RTTI property write + RefreshAppearance()
+    //       (writes via Red::GetPropertyPtr, calls VFunc 0x280)
+    //
+    //    2. LoadAppearance() -- Forces full mesh resource reload
+    //       (calls VFunc 0x260 LoadResource, then VFunc 0x280 on completion)
+    //       This is more aggressive: tears down and rebuilds the render proxy,
+    //       which should re-read ALL component properties including visualScale.
     //
     //  Cast hierarchy remains the same:
     //    - entSkinnedMeshComponent (catches Garment + CharacterCustomization)
@@ -449,7 +482,10 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                 if comp.IsA(n"entSkinnedMeshComponent") {
                     let skinned: ref<entSkinnedMeshComponent> = comp as entSkinnedMeshComponent;
                     if IsDefined(skinned) {
+                        // Step 1: Write visualScale + RefreshAppearance (C++ level)
                         skinned.SetVisualScale(scaleVec);
+                        // Step 2: Force full resource reload for aggressive refresh
+                        comp.LoadAppearance(false);
                     }
                 }
 
@@ -458,6 +494,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                     let morph: ref<entMorphTargetSkinnedMeshComponent> = comp as entMorphTargetSkinnedMeshComponent;
                     if IsDefined(morph) {
                         morph.SetVisualScale(scaleVec);
+                        comp.LoadAppearance(false);
                     }
                 }
 
@@ -466,6 +503,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                     let mesh: ref<MeshComponent> = comp as MeshComponent;
                     if IsDefined(mesh) {
                         mesh.SetVisualScale(scaleVec);
+                        comp.LoadAppearance(false);
                     }
                 } } }
             }
@@ -592,7 +630,302 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Diagnostics  --  workability checker  (v2.0.0-alpha -- native backend)
+    //  Scale Test  --  verbose diagnostic that tests the FULL pipeline
+    // ------------------------------------------------------------------
+    //
+    //  This test verifies:
+    //    A) Whether entity.GetComponents() returns components
+    //    B) What exact types are found (class names)
+    //    C) Whether SetVisualScale writes a value that GetVisualScale reads back
+    //    D) Whether chunkMask modification + RefreshAppearance produces visual change
+    //       (if chunkMask works, VFunc 0x280 is correct for that component type)
+    //    E) Whether LoadAppearance causes any effect
+    //
+    //  Run this in-game and report results to diagnose why scaling doesn't work.
+    // ------------------------------------------------------------------
+
+    public func RunScaleTest() -> array<String> {
+        let results: array<String>;
+
+        ArrayPush(results, "=== SCALE TEST v2.0.0-alpha.2 ===");
+
+        if !this.m_active {
+            ArrayPush(results, "FAIL: System not active. Load a game save first.");
+            return results;
+        }
+
+        // Get player entity
+        let player: wref<GameObject> = GetPlayer(this.GetGameInstance());
+        if !IsDefined(player) {
+            ArrayPush(results, "FAIL: Cannot get player reference.");
+            return results;
+        }
+
+        let entity: ref<Entity> = player as Entity;
+        if !IsDefined(entity) {
+            ArrayPush(results, "FAIL: Player cast to Entity returned null.");
+            return results;
+        }
+
+        ArrayPush(results, "PASS: Player entity acquired.");
+
+        // Get all components
+        let components: array<ref<IComponent>> = entity.GetComponents();
+        let totalComps: Int32 = ArraySize(components);
+        ArrayPush(results, "INFO: Total components on player: " + IntToString(totalComps));
+
+        if totalComps == 0 {
+            ArrayPush(results, "FAIL: GetComponents() returned empty array!");
+            return results;
+        }
+
+        // Classify every component
+        let skinnedCount: Int32 = 0;
+        let morphCount: Int32 = 0;
+        let staticCount: Int32 = 0;
+        let otherCount: Int32 = 0;
+        let firstSkinned: ref<entSkinnedMeshComponent>;
+        let firstMorph: ref<entMorphTargetSkinnedMeshComponent>;
+        let firstStatic: ref<MeshComponent>;
+
+        let ci: Int32 = 0;
+        while ci < totalComps {
+            let comp: ref<IComponent> = components[ci];
+            if IsDefined(comp) {
+                if comp.IsA(n"entSkinnedMeshComponent") {
+                    skinnedCount += 1;
+                    if !IsDefined(firstSkinned) {
+                        firstSkinned = comp as entSkinnedMeshComponent;
+                    }
+                } else {
+                    if comp.IsA(n"entMorphTargetSkinnedMeshComponent") {
+                        morphCount += 1;
+                        if !IsDefined(firstMorph) {
+                            firstMorph = comp as entMorphTargetSkinnedMeshComponent;
+                        }
+                    } else {
+                        if comp.IsA(n"MeshComponent") {
+                            staticCount += 1;
+                            if !IsDefined(firstStatic) {
+                                firstStatic = comp as MeshComponent;
+                            }
+                        } else {
+                            otherCount += 1;
+                        }
+                    }
+                }
+            }
+            ci += 1;
+        }
+
+        ArrayPush(results, "INFO: Skinned=" + IntToString(skinnedCount) + " Morph=" + IntToString(morphCount) + " Static=" + IntToString(staticCount) + " Other=" + IntToString(otherCount));
+
+        // ------ TEST A: entSkinnedMeshComponent scale write/read ------
+        if IsDefined(firstSkinned) {
+            ArrayPush(results, "--- TEST A: entSkinnedMeshComponent ---");
+
+            // Read initial scale
+            let initScale: Vector3 = firstSkinned.GetVisualScale();
+            ArrayPush(results, "  Before: (" + FloatToString(initScale.X) + ", " + FloatToString(initScale.Y) + ", " + FloatToString(initScale.Z) + ")");
+
+            // Write test scale
+            let testScale: Vector3 = this.MakeScaleVector(2.0);
+            firstSkinned.SetVisualScale(testScale);
+
+            // Read back
+            let afterScale: Vector3 = firstSkinned.GetVisualScale();
+            ArrayPush(results, "  After SetVisualScale(2.0): (" + FloatToString(afterScale.X) + ", " + FloatToString(afterScale.Y) + ", " + FloatToString(afterScale.Z) + ")");
+
+            // Check if write stuck
+            if afterScale.X > 1.5 && afterScale.Y > 1.5 && afterScale.Z > 1.5 {
+                ArrayPush(results, "  PASS: Write verified (property holds value)");
+            } else {
+                if afterScale.X < 0.01 && afterScale.Y < 0.01 && afterScale.Z < 0.01 {
+                    ArrayPush(results, "  FAIL: GetVisualScale returned zeros - property likely doesnt exist natively");
+                } else {
+                    ArrayPush(results, "  WARN: Write may not have stuck (read back different value)");
+                }
+            }
+
+            // Also try LoadAppearance
+            let loadResult: Bool = (firstSkinned as IComponent).LoadAppearance(false);
+            ArrayPush(results, "  LoadAppearance returned: " + BoolToString(loadResult));
+
+            // Reset back
+            let resetScale: Vector3 = this.MakeDefaultVector();
+            firstSkinned.SetVisualScale(resetScale);
+
+        } else {
+            ArrayPush(results, "--- TEST A: SKIP (no entSkinnedMeshComponent found) ---");
+        }
+
+        // ------ TEST B: entMorphTargetSkinnedMeshComponent ------
+        if IsDefined(firstMorph) {
+            ArrayPush(results, "--- TEST B: entMorphTargetSkinnedMeshComponent ---");
+
+            let initScale: Vector3 = firstMorph.GetVisualScale();
+            ArrayPush(results, "  Before: (" + FloatToString(initScale.X) + ", " + FloatToString(initScale.Y) + ", " + FloatToString(initScale.Z) + ")");
+
+            let testScale: Vector3 = this.MakeScaleVector(2.0);
+            firstMorph.SetVisualScale(testScale);
+
+            let afterScale: Vector3 = firstMorph.GetVisualScale();
+            ArrayPush(results, "  After SetVisualScale(2.0): (" + FloatToString(afterScale.X) + ", " + FloatToString(afterScale.Y) + ", " + FloatToString(afterScale.Z) + ")");
+
+            if afterScale.X > 1.5 && afterScale.Y > 1.5 && afterScale.Z > 1.5 {
+                ArrayPush(results, "  PASS: Write verified (property holds value)");
+            } else {
+                if afterScale.X < 0.01 && afterScale.Y < 0.01 && afterScale.Z < 0.01 {
+                    ArrayPush(results, "  FAIL: GetVisualScale returned zeros - property doesnt exist natively");
+                } else {
+                    ArrayPush(results, "  WARN: Write may not have stuck");
+                }
+            }
+
+            let loadResult: Bool = (firstMorph as IComponent).LoadAppearance(false);
+            ArrayPush(results, "  LoadAppearance returned: " + BoolToString(loadResult));
+
+            let resetScale: Vector3 = this.MakeDefaultVector();
+            firstMorph.SetVisualScale(resetScale);
+
+        } else {
+            ArrayPush(results, "--- TEST B: SKIP (no entMorphTargetSkinnedMeshComponent found) ---");
+        }
+
+        // ------ TEST C: MeshComponent (static) ------
+        if IsDefined(firstStatic) {
+            ArrayPush(results, "--- TEST C: MeshComponent (static) ---");
+
+            let initScale: Vector3 = firstStatic.GetVisualScale();
+            ArrayPush(results, "  Before: (" + FloatToString(initScale.X) + ", " + FloatToString(initScale.Y) + ", " + FloatToString(initScale.Z) + ")");
+
+            let testScale: Vector3 = this.MakeScaleVector(2.0);
+            firstStatic.SetVisualScale(testScale);
+
+            let afterScale: Vector3 = firstStatic.GetVisualScale();
+            ArrayPush(results, "  After SetVisualScale(2.0): (" + FloatToString(afterScale.X) + ", " + FloatToString(afterScale.Y) + ", " + FloatToString(afterScale.Z) + ")");
+
+            if afterScale.X > 1.5 && afterScale.Y > 1.5 && afterScale.Z > 1.5 {
+                ArrayPush(results, "  PASS: Write verified (property holds value)");
+            } else {
+                ArrayPush(results, "  WARN: Write may not have stuck");
+            }
+
+            let loadResult: Bool = (firstStatic as IComponent).LoadAppearance(false);
+            ArrayPush(results, "  LoadAppearance returned: " + BoolToString(loadResult));
+
+            let resetScale: Vector3 = this.MakeDefaultVector();
+            firstStatic.SetVisualScale(resetScale);
+
+        } else {
+            ArrayPush(results, "--- TEST C: SKIP (no MeshComponent found -- normal for player) ---");
+        }
+
+        // ------ TEST D: chunkMask toggle on skinned mesh ------
+        // This tests whether VFunc 0x280 (RefreshAppearance) actually works
+        // on skinned mesh components. If setting chunkMask to 0 makes the
+        // body part disappear briefly, it proves the VFunc works.
+        if IsDefined(firstSkinned) {
+            ArrayPush(results, "--- TEST D: chunkMask toggle (VFunc 0x280 verification) ---");
+            ArrayPush(results, "  NOTE: If this test causes a brief visual flicker,");
+            ArrayPush(results, "  it proves RefreshAppearance works on skinned meshes.");
+            ArrayPush(results, "  That would confirm the issue is visualScale-specific.");
+
+            // Read current chunkMask
+            let origChunk: Uint64 = firstSkinned.chunkMask;
+            ArrayPush(results, "  Original chunkMask: " + ToString(origChunk));
+
+            // Set chunkMask to 0 (hide all chunks) and refresh
+            firstSkinned.chunkMask = 0ul;
+            (firstSkinned as IComponent).RefreshAppearance();
+            ArrayPush(results, "  Set chunkMask=0, called RefreshAppearance");
+            ArrayPush(results, "  >>> CHECK: Did a body part briefly disappear? <<<");
+
+            // Restore immediately
+            firstSkinned.chunkMask = origChunk;
+            (firstSkinned as IComponent).RefreshAppearance();
+            ArrayPush(results, "  Restored chunkMask=" + ToString(origChunk));
+        }
+
+        // ------ TEST E: Direct field read on skinned component ------
+        // Test if the visualScale field exists by reading it directly
+        // (not through GetVisualScale method)
+        if IsDefined(firstSkinned) {
+            ArrayPush(results, "--- TEST E: Direct field read ---");
+            let directScale: Vector3 = firstSkinned.visualScale;
+            ArrayPush(results, "  firstSkinned.visualScale = (" + FloatToString(directScale.X) + ", " + FloatToString(directScale.Y) + ", " + FloatToString(directScale.Z) + ")");
+
+            // Write directly to field
+            let testDirect: Vector3;
+            testDirect.X = 3.0;
+            testDirect.Y = 3.0;
+            testDirect.Z = 3.0;
+            firstSkinned.visualScale = testDirect;
+
+            // Read back via method
+            let methodRead: Vector3 = firstSkinned.GetVisualScale();
+            ArrayPush(results, "  After direct write 3.0, GetVisualScale = (" + FloatToString(methodRead.X) + ", " + FloatToString(methodRead.Y) + ", " + FloatToString(methodRead.Z) + ")");
+
+            // Read back via field
+            let fieldRead: Vector3 = firstSkinned.visualScale;
+            ArrayPush(results, "  After direct write 3.0, .visualScale = (" + FloatToString(fieldRead.X) + ", " + FloatToString(fieldRead.Y) + ", " + FloatToString(fieldRead.Z) + ")");
+
+            if methodRead.X > 2.5 && fieldRead.X > 2.5 {
+                ArrayPush(results, "  PASS: Field and method read the SAME property");
+            } else {
+                if methodRead.X > 2.5 && fieldRead.X < 0.5 {
+                    ArrayPush(results, "  CRITICAL: Method and field read DIFFERENT locations!");
+                    ArrayPush(results, "  This means @addField created an extension field, NOT native");
+                } else {
+                    if methodRead.X < 0.5 && fieldRead.X > 2.5 {
+                        ArrayPush(results, "  CRITICAL: Method reads different memory than field!");
+                    } else {
+                        ArrayPush(results, "  WARN: Neither read persisted the write correctly");
+                    }
+                }
+            }
+
+            // Reset
+            let resetDirect: Vector3;
+            resetDirect.X = 1.0;
+            resetDirect.Y = 1.0;
+            resetDirect.Z = 1.0;
+            firstSkinned.visualScale = resetDirect;
+            firstSkinned.SetVisualScale(resetDirect);
+        }
+
+        // ------ Summary ------
+        ArrayPush(results, "=== END SCALE TEST ===");
+        ArrayPush(results, "Report these results at:");
+        ArrayPush(results, "github.com/sinica57pls-dot/CP2077/issues");
+
+        // Cache results for CET overlay
+        this.m_scaleTestResults = results;
+
+        // Log everything
+        let r: Int32 = 0;
+        while r < ArraySize(results) {
+            ModLog(n"PoseSizeChanger", "[ScaleTest] " + results[r]);
+            r += 1;
+        }
+
+        return results;
+    }
+
+    // CET accessor for scale test results
+    public func GetScaleTestResultCount() -> Int32 {
+        return ArraySize(this.m_scaleTestResults);
+    }
+
+    public func GetScaleTestResult(index: Int32) -> String {
+        if index >= 0 && index < ArraySize(this.m_scaleTestResults) {
+            return this.m_scaleTestResults[index];
+        }
+        return "";
+    }
+
+    // ------------------------------------------------------------------
+    //  Diagnostics  --  workability checker
     // ------------------------------------------------------------------
 
     public func RunDiagnostics() -> array<String> {
@@ -658,7 +991,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             ArrayPush(results, "FAIL: DelaySystem unavailable -- scale persistence will not work");
         }
 
-        // --- 7. Mesh component access on player (v2.0.0-alpha: per-type breakdown) ---
+        // --- 7. Mesh component access on player (per-type breakdown) ---
         if IsDefined(player) {
             let entity: ref<Entity> = player as Entity;
             if IsDefined(entity) {
@@ -696,14 +1029,12 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                     ArrayPush(results, "WARN: No mesh components found on player -- scaling may not work");
                 }
 
-                // --- 8. Test cast paths for EACH component type (v2.0.0-alpha) ---
-                // Test entSkinnedMeshComponent cast + native SetVisualScale method
+                // --- 8. Test cast paths for EACH component type ---
                 let testSkinned: ref<IComponent> = entity.FindComponentByType(n"entSkinnedMeshComponent");
                 if IsDefined(testSkinned) {
                     let castSkinned: ref<entSkinnedMeshComponent> = testSkinned as entSkinnedMeshComponent;
                     if IsDefined(castSkinned) {
                         ArrayPush(results, "PASS: entSkinnedMeshComponent cast works");
-                        // Test native GetVisualScale method
                         let curScale: Vector3 = castSkinned.GetVisualScale();
                         ArrayPush(results, "PASS: GetVisualScale() returned (" + FloatToString(curScale.X) + ", " + FloatToString(curScale.Y) + ", " + FloatToString(curScale.Z) + ")");
                     } else {
@@ -713,7 +1044,6 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                     ArrayPush(results, "WARN: No entSkinnedMeshComponent found on player via FindComponentByType");
                 }
 
-                // Test MeshComponent cast (for static/prop meshes)
                 let testMesh: ref<IComponent> = entity.FindComponentByType(n"MeshComponent");
                 if IsDefined(testMesh) {
                     let castMesh: ref<MeshComponent> = testMesh as MeshComponent;
@@ -755,7 +1085,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         }
 
         // --- 12. Version check ---
-        ArrayPush(results, "INFO: Pose Size Changer v2.0.0-alpha (native C++ backend)");
+        ArrayPush(results, "INFO: Pose Size Changer v2.0.0-alpha.2 (native C++ backend + multi-refresh)");
 
         // Log all results
         let r: Int32 = 0;

@@ -65,7 +65,7 @@ CET provides the in-game overlay UI (the ~ menu) and Lua scripting for the contr
 
 ### Step 1: Download
 
-Download `PoseSizeChanger-v2.0.0-alpha.zip` from the GitHub releases page:
+Download `PoseSizeChanger-v2.0.0-alpha.2.zip` from the GitHub releases page:
 https://github.com/sinica57pls-dot/CP2077/releases
 
 ### Step 2: Extract
@@ -271,6 +271,7 @@ The framework mods (RED4ext, Redscript, Codeware, CET) can stay -- other mods li
 
 ## Version History
 
+- **v2.0.0-alpha.2** -- DIAGNOSTIC RELEASE: Fixed Vector3 construction, added LoadAppearance() aggressive refresh, added "Scale Test" diagnostic for pipeline debugging.
 - **v2.0.0-alpha** -- NATIVE C++ BACKEND: Scale transforms now use Codeware's native SetVisualScale() method implemented as a RED4ext C++ RTTI expansion. SetVisualScale() writes visualScale via RTTI property lookup at the C++ level and calls RefreshAppearance() to force the renderer to pick up changes. This replaces the @addField-only approach. All prior fixes preserved.
 - **v1.0.4** -- Audit cleanup: thorough static analysis of 812 lines Redscript + 418 lines Lua verified all APIs, syntax, lifecycle, and race conditions. Removed phantom FloatToStringPrec comment, fixed INSTALL.md version references, marked dead GetDiagnosticCount() as deprecated. No functional changes; v1.0.3 core logic confirmed correct.
 - **v1.0.3** -- CRITICAL: Fixed character scaling. entSkinnedMeshComponent does NOT inherit from MeshComponent (they are siblings under IVisualComponent). Previous versions cast to MeshComponent which always returned null for character meshes. Fixed by exposing visualScale on entSkinnedMeshComponent and entMorphTargetSkinnedMeshComponent via @addField. Enhanced diagnostics with per-component-type counts and cast path verification. Improved entity resolution fallback.

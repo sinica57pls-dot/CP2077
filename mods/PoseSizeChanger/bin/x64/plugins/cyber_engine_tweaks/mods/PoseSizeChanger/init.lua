@@ -1,16 +1,20 @@
 --[[
-    Pose Size Changer v2.0.0-alpha  --  CET Integration Layer
+    Pose Size Changer v2.0.0-alpha.2  --  CET Integration Layer
     =====================================================
 
     AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
 
+    v2.0.0-alpha.2: Enhanced diagnostics & multi-approach refresh
+      - Added "Scale Test" button: verbose diagnostic that tests the
+        FULL pipeline (property write/read, chunkMask toggle, field vs
+        method consistency)
+      - Shows detailed per-component results for in-game debugging
+      - Fixed Vector3 construction (field-by-field, not constructor args)
+      - After SetVisualScale, also calls LoadAppearance() for full refresh
+
     v2.0.0-alpha: Native C++ backend (RED4ext plugin)
       - Uses Codeware's native SetVisualScale() method at the C++ level
       - SetVisualScale() calls RefreshAppearance() internally
-      - Guarantees rendering update after scale change
-      - All prior fixes preserved (correct cast paths, diagnostics, etc.)
-      - pcall safety on all Redscript bridge calls
-      - Cached system ref invalidation on session end
 
     Requirements:
       - Cyber Engine Tweaks 1.37+
@@ -28,6 +32,8 @@ local PoseSizeChanger = {
     statusTime = 0,
     diagResults = {},
     diagRan = false,
+    scaleTestResults = {},
+    scaleTestRan = false,
     sessionReady = false,
 }
 
@@ -55,6 +61,8 @@ function PoseSizeChanger:InvalidateSystem()
     self.sessionReady = false
     self.diagResults = {}
     self.diagRan = false
+    self.scaleTestResults = {}
+    self.scaleTestRan = false
     self.targetName = "None"
 end
 
@@ -70,6 +78,64 @@ function PoseSizeChanger:GetStatus()
     end
     self.statusMsg = ""
     return nil
+end
+
+-- Helper: read array results from Redscript (handles 0-indexed and 1-indexed CET variants)
+function PoseSizeChanger:ReadResultArray(rawResults)
+    local output = {}
+    if not rawResults then return output end
+
+    -- Try 0-indexed access first (standard CET bridge behavior)
+    local idx = 0
+    local safetyLimit = 80
+    while idx < safetyLimit do
+        local okR, line = pcall(function() return rawResults[idx] end)
+        if not okR or line == nil or line == "" then break end
+        table.insert(output, tostring(line))
+        idx = idx + 1
+    end
+
+    -- If 0-indexed got nothing, try 1-indexed (some CET versions)
+    if #output == 0 then
+        local len = 0
+        local okLen, rawLen = pcall(function() return #rawResults end)
+        if okLen and rawLen then len = rawLen end
+        for li = 1, len do
+            local okR, line = pcall(function() return rawResults[li] end)
+            if okR and line and line ~= "" then
+                table.insert(output, tostring(line))
+            end
+        end
+    end
+
+    return output
+end
+
+-- Helper: draw a result line with color coding
+function PoseSizeChanger:DrawResultLine(text)
+    if not text then return end
+    text = tostring(text)
+    if string.find(text, "^PASS") then
+        ImGui.TextColored(0.3, 1.0, 0.3, 1.0, text)
+    elseif string.find(text, "^FAIL") then
+        ImGui.TextColored(1.0, 0.3, 0.3, 1.0, text)
+    elseif string.find(text, "^WARN") then
+        ImGui.TextColored(1.0, 0.8, 0.2, 1.0, text)
+    elseif string.find(text, "^INFO") then
+        ImGui.TextColored(0.5, 0.7, 1.0, 1.0, text)
+    elseif string.find(text, "^CRITICAL") then
+        ImGui.TextColored(1.0, 0.0, 0.5, 1.0, text)
+    elseif string.find(text, "^ERROR") then
+        ImGui.TextColored(1.0, 0.0, 0.0, 1.0, text)
+    elseif string.find(text, "^===") then
+        ImGui.TextColored(1.0, 1.0, 0.5, 1.0, text)
+    elseif string.find(text, "^%-%-%-") then
+        ImGui.TextColored(0.8, 0.6, 1.0, 1.0, text)
+    elseif string.find(text, "^  >>>") then
+        ImGui.TextColored(1.0, 0.5, 0.0, 1.0, text)
+    else
+        ImGui.Text(text)
+    end
 end
 
 -- -----------------------------------------------------------------------
@@ -311,6 +377,47 @@ registerForEvent("onDraw", function()
     ImGui.Separator()
 
     -- ===========================
+    -- SCALE TEST (NEW in v2.0.0-alpha.2)
+    -- ===========================
+    ImGui.TextColored(1.0, 0.6, 0.0, 1.0, "--- SCALE TEST ---")
+    ImGui.Spacing()
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Verbose test of the scaling pipeline.")
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Tests property write/read, chunkMask, VFunc.")
+    ImGui.Spacing()
+
+    ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.3, 0.0, 1.0)
+    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0.8, 0.4, 0.0, 1.0)
+    if ImGui.Button("Run Scale Test") then
+        local okST, rawResults = pcall(function() return sys:RunScaleTest() end)
+        if okST and rawResults then
+            PoseSizeChanger.scaleTestResults = PoseSizeChanger:ReadResultArray(rawResults)
+            PoseSizeChanger.scaleTestRan = true
+            PoseSizeChanger:SetStatus("Scale Test complete -- " .. tostring(#PoseSizeChanger.scaleTestResults) .. " results")
+        else
+            PoseSizeChanger.scaleTestResults = {"ERROR: RunScaleTest failed. Is the system active?"}
+            PoseSizeChanger.scaleTestRan = true
+            PoseSizeChanger:SetStatus("Scale Test failed")
+        end
+    end
+    ImGui.PopStyleColor(2)
+
+    ImGui.SameLine()
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "(tests on player)")
+
+    ImGui.Spacing()
+
+    if PoseSizeChanger.scaleTestRan and #PoseSizeChanger.scaleTestResults > 0 then
+        for _, line in ipairs(PoseSizeChanger.scaleTestResults) do
+            PoseSizeChanger:DrawResultLine(line)
+        end
+    elseif PoseSizeChanger.scaleTestRan then
+        ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "No results returned.")
+    end
+
+    ImGui.Spacing()
+    ImGui.Separator()
+
+    -- ===========================
     -- DIAGNOSTICS
     -- ===========================
     ImGui.TextColored(0.9, 0.4, 0.4, 1.0, "--- DIAGNOSTICS ---")
@@ -319,29 +426,7 @@ registerForEvent("onDraw", function()
     if ImGui.Button("Run Diagnostics") then
         local okD, rawResults = pcall(function() return sys:RunDiagnostics() end)
         if okD and rawResults then
-            PoseSizeChanger.diagResults = {}
-            -- Redscript arrays are 0-indexed userdata in CET
-            -- Try 0-indexed access first (standard CET bridge behavior)
-            local idx = 0
-            local safetyLimit = 30
-            while idx < safetyLimit do
-                local okR, line = pcall(function() return rawResults[idx] end)
-                if not okR or line == nil or line == "" then break end
-                table.insert(PoseSizeChanger.diagResults, tostring(line))
-                idx = idx + 1
-            end
-            -- If 0-indexed got nothing, try 1-indexed (some CET versions)
-            if #PoseSizeChanger.diagResults == 0 then
-                local len = 0
-                local okLen, rawLen = pcall(function() return #rawResults end)
-                if okLen and rawLen then len = rawLen end
-                for li = 1, len do
-                    local okR, line = pcall(function() return rawResults[li] end)
-                    if okR and line and line ~= "" then
-                        table.insert(PoseSizeChanger.diagResults, tostring(line))
-                    end
-                end
-            end
+            PoseSizeChanger.diagResults = PoseSizeChanger:ReadResultArray(rawResults)
             PoseSizeChanger.diagRan = true
             PoseSizeChanger:SetStatus("Diagnostics complete -- " .. tostring(#PoseSizeChanger.diagResults) .. " checks")
         else
@@ -358,22 +443,7 @@ registerForEvent("onDraw", function()
 
     if PoseSizeChanger.diagRan and #PoseSizeChanger.diagResults > 0 then
         for _, line in ipairs(PoseSizeChanger.diagResults) do
-            if line then
-                local text = tostring(line)
-                if string.find(text, "^PASS") then
-                    ImGui.TextColored(0.3, 1.0, 0.3, 1.0, text)
-                elseif string.find(text, "^FAIL") then
-                    ImGui.TextColored(1.0, 0.3, 0.3, 1.0, text)
-                elseif string.find(text, "^WARN") then
-                    ImGui.TextColored(1.0, 0.8, 0.2, 1.0, text)
-                elseif string.find(text, "^INFO") then
-                    ImGui.TextColored(0.5, 0.7, 1.0, 1.0, text)
-                elseif string.find(text, "^ERROR") then
-                    ImGui.TextColored(1.0, 0.0, 0.0, 1.0, text)
-                else
-                    ImGui.Text(text)
-                end
-            end
+            PoseSizeChanger:DrawResultLine(line)
         end
     elseif PoseSizeChanger.diagRan then
         ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "No results. System may not support diagnostics.")
@@ -398,7 +468,7 @@ registerForEvent("onDraw", function()
     ImGui.Text("Use 'Apply to Target' or F9 to scale them.")
     ImGui.Text("Scale persists through pose changes!")
     ImGui.Spacing()
-    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v2.0.0-alpha")
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v2.0.0-alpha.2")
 
     ImGui.End()
 end)
@@ -407,7 +477,7 @@ end)
 -- CET lifecycle
 -- -----------------------------------------------------------------------
 registerForEvent("onInit", function()
-    print("[PoseSizeChanger] CET mod loaded. v2.0.0-alpha")
+    print("[PoseSizeChanger] CET mod loaded. v2.0.0-alpha.2")
 end)
 
 registerForEvent("onShutdown", function()
