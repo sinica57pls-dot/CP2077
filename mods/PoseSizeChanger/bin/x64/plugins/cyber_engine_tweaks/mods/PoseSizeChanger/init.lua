@@ -1,16 +1,16 @@
 --[[
-    Pose Size Changer v1.0.4  --  CET Integration Layer
+    Pose Size Changer v2.0.0-alpha  --  CET Integration Layer
     =====================================================
 
     AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
 
-    v1.0.4 fixes:
-      - Updated version strings
-      - Diagnostics now show per-component-type breakdown
-      - Better error messages for the skinned mesh fix
+    v2.0.0-alpha: Native C++ backend (RED4ext plugin)
+      - Uses Codeware's native SetVisualScale() method at the C++ level
+      - SetVisualScale() calls RefreshAppearance() internally
+      - Guarantees rendering update after scale change
+      - All prior fixes preserved (correct cast paths, diagnostics, etc.)
       - pcall safety on all Redscript bridge calls
       - Cached system ref invalidation on session end
-      - Fixed diagResults iteration for Redscript arrays (0-indexed)
 
     Requirements:
       - Cyber Engine Tweaks 1.37+
@@ -398,7 +398,7 @@ registerForEvent("onDraw", function()
     ImGui.Text("Use 'Apply to Target' or F9 to scale them.")
     ImGui.Text("Scale persists through pose changes!")
     ImGui.Spacing()
-    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v1.0.4")
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Pose Size Changer v2.0.0-alpha")
 
     ImGui.End()
 end)
@@ -407,7 +407,7 @@ end)
 -- CET lifecycle
 -- -----------------------------------------------------------------------
 registerForEvent("onInit", function()
-    print("[PoseSizeChanger] CET mod loaded. v1.0.4")
+    print("[PoseSizeChanger] CET mod loaded. v2.0.0-alpha")
 end)
 
 registerForEvent("onShutdown", function()

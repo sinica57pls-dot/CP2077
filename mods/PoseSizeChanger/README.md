@@ -78,6 +78,7 @@ The mod includes a built-in workability checker. Open the CET overlay (~) and cl
 
 ## Changelog
 
+- **v2.0.0-alpha** -- NATIVE C++ BACKEND: Scale transforms now use Codeware's native SetVisualScale() method implemented as a RED4ext C++ RTTI expansion. SetVisualScale() resolves the visualScale field via RTTI property lookup at the C++ level and calls RefreshAppearance() after writing, forcing the renderer to pick up changes. This replaces the prior @addField-only approach which had no rendering guarantee. All prior fixes preserved.
 - **v1.0.4** -- Audit cleanup: full static analysis verified 812 lines Redscript + 418 lines Lua + 18 framework files + 6 C++ sources. Removed phantom comment, fixed INSTALL.md version refs, deprecated dead code. No functional changes; core logic confirmed correct.
 - **v1.0.3** -- CRITICAL FIX: Character scaling now actually works. Previous versions cast skinned mesh components to MeshComponent (always returned null because they are sibling classes, not parent-child). Fixed by exposing visualScale on entSkinnedMeshComponent and entMorphTargetSkinnedMeshComponent via @addField. Enhanced diagnostics with per-component-type breakdown and cast verification.
 - **v1.0.2** -- Diagnostics panel, mod conflict detection, pcall crash safety

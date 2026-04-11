@@ -1,7 +1,7 @@
 module PoseSizeChanger
 
 // ---------------------------------------------------------------------------
-//  Pose Size Changer System  v1.0.4
+//  Pose Size Changer System  v2.0.0-alpha
 // ---------------------------------------------------------------------------
 //
 //  AMM-style "aim and apply" entity scaler for Photo Mode and gameplay.
@@ -11,44 +11,19 @@ module PoseSizeChanger
 //  3. The scale persists through pose changes
 //  4. Press F10 to reset that character back to normal
 //
-//  v1.0.4 fixes:
-//    CRITICAL: entSkinnedMeshComponent does NOT inherit from MeshComponent.
-//    They are siblings under IVisualComponent. The `comp as MeshComponent`
-//    cast silently returned null for ALL character meshes (body, head,
-//    clothing), meaning scaling did NOTHING on characters.
+//  v2.0.0-alpha: Native C++ backend (RED4ext plugin)
+//    Codeware now exposes visualScale on skinned mesh types at the C++ level
+//    via RTTI expansion. SetVisualScale() triggers RefreshAppearance() to
+//    force the renderer to pick up the new scale. This replaces the prior
+//    @addField-only approach which had no rendering guarantee.
 //
-//    Fix: Declare @addField for visualScale on entSkinnedMeshComponent
-//    and entMorphTargetSkinnedMeshComponent (the engine has this field
-//    natively at the C++ level, Codeware just doesn't expose it).
-//    Then cast to the correct concrete types instead of MeshComponent.
-//
-//    Additional fixes:
-//    - Added entCharacterCustomizationSkinnedMeshComponent support
-//    - Diagnostics now tests the ACTUAL cast paths used for scaling
-//    - Diagnostics reports per-component-type counts
-//    - Fixed m_ticking race: clear flag BEFORE checking conditions
-//    - ResolveEntity now checks all DynamicEntitySystem tags as fallback
+//    Changes from v2.0.0-alpha:
+//    - Uses Codeware's native SetVisualScale() method instead of direct field write
+//    - @addField declarations moved into Codeware framework
+//    - SetVisualScale() calls RefreshAppearance() internally (C++ level)
+//    - All prior fixes preserved (correct cast paths, race condition fix, etc.)
 //
 // ---------------------------------------------------------------------------
-
-// ============================
-//  Expose visualScale on skinned mesh component types
-// ============================
-//
-//  The CP2077 engine has visualScale on these components at the C++ level
-//  (confirmed by WolvenKit Entity Instance Data, Object Spawner, and the
-//  appearancePartComponentOverrides struct). Codeware only exposes it on
-//  MeshComponent via @addField. We do the same for the skinned types.
-//
-//  If a future Codeware version adds these, @addField will simply produce
-//  a harmless "field already defined" warning and have no effect.
-// ============================
-
-@addField(entSkinnedMeshComponent)
-public native let visualScale: Vector3;
-
-@addField(entMorphTargetSkinnedMeshComponent)
-public native let visualScale: Vector3;
 
 // ============================
 //  Scaled entity tracking
@@ -148,7 +123,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
 
         this.m_active = true;
 
-        ModLog(n"PoseSizeChanger", "v1.0.4 ready. F9 = scale target, F10 = reset target.");
+        ModLog(n"PoseSizeChanger", "v2.0.0-alpha ready. F9 = scale target, F10 = reset target.");
     }
 
     // ------------------------------------------------------------------
@@ -444,31 +419,17 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Mesh component scaling  (v1.0.4 -- FIXED)
+    //  Mesh component scaling  (v2.0.0-alpha -- Native C++ backend)
     // ------------------------------------------------------------------
     //
-    //  CRITICAL FIX: The class hierarchy in CP2077 is:
+    //  Uses Codeware's native SetVisualScale() method which:
+    //    1. Writes visualScale via RTTI property access (works at C++ level)
+    //    2. Calls RefreshAppearance() to force the renderer to pick up the change
     //
-    //    IVisualComponent
-    //      +-- MeshComponent            (has native visualScale)
-    //      |     +-- PhysicalMeshComponent
-    //      |     +-- HudMeshComponent
-    //      +-- entISkinTargetComponent
-    //            +-- entSkinnedMeshComponent   (has native visualScale,
-    //            |     +-- entGarmentSkinnedMeshComponent   but NOT a
-    //            |     +-- entCharacterCustomizationSkinnedMeshComponent  MeshComponent!)
-    //            +-- entMorphTargetSkinnedMeshComponent  (same)
-    //
-    //  MeshComponent and entISkinTargetComponent are SIBLINGS. Casting
-    //  entSkinnedMeshComponent to MeshComponent ALWAYS returns null.
-    //
-    //  v1.0.2 and earlier: `comp as MeshComponent` -> null for ALL character
-    //  meshes. The mod literally did nothing for characters.
-    //
-    //  v1.0.4: We now cast to the correct concrete types:
-    //    - MeshComponent for static/prop meshes (visualScale from Codeware @addField)
-    //    - entSkinnedMeshComponent for character body/head (visualScale from our @addField)
-    //    - entMorphTargetSkinnedMeshComponent for morph targets (same)
+    //  Cast hierarchy remains the same:
+    //    - entSkinnedMeshComponent (catches Garment + CharacterCustomization)
+    //    - entMorphTargetSkinnedMeshComponent (sibling, needs separate cast)
+    //    - MeshComponent (static/prop meshes)
     //
     // ------------------------------------------------------------------
 
@@ -488,7 +449,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                 if comp.IsA(n"entSkinnedMeshComponent") {
                     let skinned: ref<entSkinnedMeshComponent> = comp as entSkinnedMeshComponent;
                     if IsDefined(skinned) {
-                        skinned.visualScale = scaleVec;
+                        skinned.SetVisualScale(scaleVec);
                     }
                 }
 
@@ -496,7 +457,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                 else { if comp.IsA(n"entMorphTargetSkinnedMeshComponent") {
                     let morph: ref<entMorphTargetSkinnedMeshComponent> = comp as entMorphTargetSkinnedMeshComponent;
                     if IsDefined(morph) {
-                        morph.visualScale = scaleVec;
+                        morph.SetVisualScale(scaleVec);
                     }
                 }
 
@@ -504,7 +465,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                 else { if comp.IsA(n"MeshComponent") {
                     let mesh: ref<MeshComponent> = comp as MeshComponent;
                     if IsDefined(mesh) {
-                        mesh.visualScale = scaleVec;
+                        mesh.SetVisualScale(scaleVec);
                     }
                 } } }
             }
@@ -631,7 +592,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
     }
 
     // ------------------------------------------------------------------
-    //  Diagnostics  --  workability checker  (v1.0.4 -- enhanced)
+    //  Diagnostics  --  workability checker  (v2.0.0-alpha -- native backend)
     // ------------------------------------------------------------------
 
     public func RunDiagnostics() -> array<String> {
@@ -697,7 +658,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
             ArrayPush(results, "FAIL: DelaySystem unavailable -- scale persistence will not work");
         }
 
-        // --- 7. Mesh component access on player (v1.0.4: per-type breakdown) ---
+        // --- 7. Mesh component access on player (v2.0.0-alpha: per-type breakdown) ---
         if IsDefined(player) {
             let entity: ref<Entity> = player as Entity;
             if IsDefined(entity) {
@@ -735,13 +696,16 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
                     ArrayPush(results, "WARN: No mesh components found on player -- scaling may not work");
                 }
 
-                // --- 8. Test cast paths for EACH component type (v1.0.4) ---
-                // Test entSkinnedMeshComponent cast + visualScale access
+                // --- 8. Test cast paths for EACH component type (v2.0.0-alpha) ---
+                // Test entSkinnedMeshComponent cast + native SetVisualScale method
                 let testSkinned: ref<IComponent> = entity.FindComponentByType(n"entSkinnedMeshComponent");
                 if IsDefined(testSkinned) {
                     let castSkinned: ref<entSkinnedMeshComponent> = testSkinned as entSkinnedMeshComponent;
                     if IsDefined(castSkinned) {
-                        ArrayPush(results, "PASS: entSkinnedMeshComponent cast works -- character scaling enabled");
+                        ArrayPush(results, "PASS: entSkinnedMeshComponent cast works");
+                        // Test native GetVisualScale method
+                        let curScale: Vector3 = castSkinned.GetVisualScale();
+                        ArrayPush(results, "PASS: GetVisualScale() returned (" + FloatToString(curScale.X) + ", " + FloatToString(curScale.Y) + ", " + FloatToString(curScale.Z) + ")");
                     } else {
                         ArrayPush(results, "FAIL: entSkinnedMeshComponent cast returned null");
                     }
@@ -791,7 +755,7 @@ public class PoseSizeChangerSystem extends ScriptableSystem {
         }
 
         // --- 12. Version check ---
-        ArrayPush(results, "INFO: Pose Size Changer v1.0.4 (skinned mesh fix)");
+        ArrayPush(results, "INFO: Pose Size Changer v2.0.0-alpha (native C++ backend)");
 
         // Log all results
         let r: Int32 = 0;
