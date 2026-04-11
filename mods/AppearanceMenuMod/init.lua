@@ -5429,7 +5429,6 @@ function AMM:CheckCompanionDistances()
     if not player then return end
 
     local playerPos = player:GetWorldPosition()
-    local playerFwd = player:GetWorldForward()
 
     for _, spawn in pairs(AMM.Spawn.spawnedNPCs) do
       if spawn.entityID and spawn.handle and spawn.handle:IsNPC() and spawn.handle.isPlayerCompanionCached then
@@ -5437,27 +5436,32 @@ function AMM:CheckCompanionDistances()
         local distance = Util:VectorDistance(playerPos, npcPos)
         local followDistance = AMM.followDistance[2] or 1
 
-        if distance > 15 then
-          -- Way too far: instant teleport right behind the player
-          local teleportPos = Vector4.new(
-            playerPos.x - playerFwd.x * 1.2,
-            playerPos.y - playerFwd.y * 1.2,
-            playerPos.z,
-            1.0
-          )
-          Game.GetTeleportationFacility():Teleport(spawn.handle, teleportPos, EulerAngles.new(0, 0, 0))
-          spawn.farDistance = false
-          AMM:UpdateFollowDistance()
+        if distance > 10 then
+          -- Far away: sprint to catch up
+          if spawn.currentMoveType ~= "Sprint" then
+            spawn.currentMoveType = "Sprint"
+            spawn.activeCommand, _ = Util:FollowTarget(spawn.handle, player, followDistance, "Sprint")
+          end
+          spawn.farDistance = true
+        elseif distance > 5 then
+          -- Medium distance: jog to close the gap
+          if spawn.currentMoveType ~= "Run" then
+            spawn.currentMoveType = "Run"
+            spawn.activeCommand, _ = Util:FollowTarget(spawn.handle, player, followDistance, "Run")
+          end
+          spawn.farDistance = true
         elseif distance > followDistance then
-          -- Drifting away: re-issue follow command to pull them back
-          if not spawn.farDistance then
+          -- Slightly far: walk naturally
+          if not spawn.farDistance or spawn.currentMoveType ~= "Walk" then
             spawn.farDistance = true
+            spawn.currentMoveType = "Walk"
             AMM:UpdateFollowDistance()
           end
         else
-          -- Close enough
+          -- Close enough: stop and face the player
           if spawn.farDistance then
             spawn.farDistance = false
+            spawn.currentMoveType = nil
             Util:RotateTo(spawn.handle)
           end
         end

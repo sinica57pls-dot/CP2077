@@ -676,7 +676,7 @@ function Util:FollowTarget(targetPuppet, target, distance, walkType)
   cmd.stopWhenDestinationReached = false
   cmd.target = target
   cmd.movementType = walkType or "Walk"
-  cmd.teleport = true
+  cmd.teleport = false
   cmd.tolerance = 0.5
   cmd.lookAtTarget = target
 
