@@ -1,5 +1,5 @@
 --[[
-    AMM Companion Close-Follow  --  CET Integration Layer
+    AMM Companion Close-Follow v1.0.2  --  CET Integration Layer
     =====================================================
 
     This file provides a Cyber Engine Tweaks overlay menu so you can
@@ -7,6 +7,9 @@
     instead of / in addition to the F6 hotkey.
 
     It also lets you tweak distance thresholds live from the overlay.
+
+    v1.0.2: Fixed fatal compile errors (FTLog, EntityID.GetHash), added
+    pcall crash safety to all game API calls.
 
     Requirements:
       - Cyber Engine Tweaks 1.37+
@@ -20,14 +23,28 @@ local CompanionClose = {
     system = nil,
 }
 
+-- -----------------------------------------------------------------------
+-- System access (pcall-safe)
+-- -----------------------------------------------------------------------
 function CompanionClose:GetSystem()
     if self.system == nil then
-        local container = Game.GetScriptableSystemsContainer()
-        if container then
-            self.system = container:Get("AMMCompanionClose.CompanionCloseSystem")
+        local ok, container = pcall(function() return Game.GetScriptableSystemsContainer() end)
+        if ok and container then
+            local ok2, sys = pcall(function()
+                return container:Get("AMMCompanionClose.CompanionCloseSystem")
+            end)
+            if ok2 and sys then
+                self.system = sys
+            end
         end
     end
     return self.system
+end
+
+-- Invalidate cached system ref (call on session end / shutdown)
+function CompanionClose:InvalidateSystem()
+    self.system = nil
+    self.enabled = false
 end
 
 -- -----------------------------------------------------------------------
@@ -47,26 +64,35 @@ registerForEvent("onDraw", function()
         return
     end
 
-    local isActive = sys:IsActive()
+    local isActive = false
+    local okActive, resultActive = pcall(function() return sys:IsActive() end)
+    if okActive then
+        isActive = resultActive
+    end
+
     if not isActive then
         ImGui.TextColored(1.0, 0.6, 0.2, 1.0, "Waiting for game session...")
         ImGui.End()
         return
     end
 
-    local isEnabled = sys:IsEnabled()
+    local isEnabled = false
+    local okEnabled, resultEnabled = pcall(function() return sys:IsEnabled() end)
+    if okEnabled then
+        isEnabled = resultEnabled
+    end
 
     -- Toggle button
     if isEnabled then
         ImGui.PushStyleColor(ImGuiCol.Button, 0.2, 0.7, 0.3, 1.0)
         if ImGui.Button("  ENABLED  --  Click to Disable  ") then
-            sys:SetEnabled(false)
+            pcall(function() sys:SetEnabled(false) end)
         end
         ImGui.PopStyleColor()
     else
         ImGui.PushStyleColor(ImGuiCol.Button, 0.6, 0.2, 0.2, 1.0)
         if ImGui.Button("  DISABLED  --  Click to Enable  ") then
-            sys:SetEnabled(true)
+            pcall(function() sys:SetEnabled(true) end)
         end
         ImGui.PopStyleColor()
     end
@@ -79,6 +105,9 @@ registerForEvent("onDraw", function()
     ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Tip: Spawn NPCs with AMM, then press F6.")
     ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "They will stick close to you as you move!")
 
+    ImGui.Spacing()
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Companion Close-Follow v1.0.2")
+
     ImGui.End()
 end)
 
@@ -86,11 +115,11 @@ end)
 -- CET lifecycle
 -- -----------------------------------------------------------------------
 registerForEvent("onInit", function()
-    print("[CompanionClose] CET mod loaded.")
+    print("[CompanionClose] CET mod loaded. v1.0.2")
 end)
 
 registerForEvent("onShutdown", function()
-    CompanionClose.system = nil
+    CompanionClose:InvalidateSystem()
     print("[CompanionClose] CET mod unloaded.")
 end)
 
