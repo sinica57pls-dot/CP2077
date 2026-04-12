@@ -31,6 +31,8 @@ from .entity import (
     entMorphTargetSkinnedMeshComponent,
     Entity, GameObject, gamePuppet, ScriptedPuppet,
     PlayerPuppet, NPCPuppet, DynamicEntitySpec,
+    # v3: Rig deformation / visual subsystem
+    BodyType, BoneTransform, DeformationRig, MorphTargetEntry,
 )
 
 # ── Core engine systems ────────────────────────────────────────────
@@ -121,6 +123,15 @@ from .world import (
     GameTimeSystem,
     GameplayRestriction, GameplayStatusEffect, GameplayStatusEffectSystem,
     ObserverRegistry,
+)
+
+# ── Visual verification ────────────────────────────────────────────
+from .visual_snapshot import VisualSnapshot
+from .skeleton import (
+    CP2077_SKELETON,
+    generate_skeleton_svg, generate_skeleton_svg_comparison,
+    render_skeleton_png, render_comparison_png,
+    write_svg, export_gltf_json,
 )
 
 # ── Simulation orchestrator ────────────────────────────────────────

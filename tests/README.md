@@ -72,6 +72,19 @@ python -m unittest tests.mods.test_inventory_system      -v  # inventory / equip
 | **GameplayStatusEffects** | `engine/world.py` | Apply / remove effects; duration expiry via `Tick(dt)`; `GameplayRestriction` constants |
 | **ObserverRegistry** | `engine/world.py` | CET-style `Observe` / `ObserveAfter` / `Override` hook simulation |
 
+### Character Visual Systems
+
+| System | Module | What it simulates |
+|------|------|------|
+| **BodyType** | `engine/entity.py` | `WomanAverage`, `ManAverage`, `ManBig` body type enum; base body mesh path resolution |
+| **BoneTransform** | `engine/entity.py` | Per-bone scale data (scaleX/Y/Z); identity check; bilateral mirroring (`_l` ↔ `_r`); Blender axis swap note |
+| **DeformationRig** | `engine/entity.py` | Named set of bone transforms; symmetric bone scaling; TPP/FPP rig pair; clone, reset, modify |
+| **MorphTargets** | `engine/entity.py` | `ApplyMorphTarget(target, region, value)` on `entMorphTargetSkinnedMeshComponent`; 0.0–1.0 clamping; entity-level lookup matching `EntityEx.cpp` |
+| **VisualScale** | `engine/entity.py` | `Get/SetVisualScale(Vector3)` on all mesh component types; `RefreshAppearance()` trigger matching `VisualScaleEx.cpp` |
+| **VisualSnapshot** | `engine/visual_snapshot.py` | Capture full visual state (body type, mesh components, scales, morphs, rig bones); `diff()` / `differs_from()` comparison; JSON-serializable |
+| **SVG Skeleton** | `engine/skeleton.py` | 2D wireframe diagram from bone hierarchy; green/orange bone colouring; before/after comparison overlay |
+| **glTF Export** | `engine/skeleton.py` | glTF 2.0 JSON with bone nodes, parent-child hierarchy, scale values, embedded cube mesh buffer; viewable in online 3D viewers |
+
 ---
 
 ## Test Coverage
@@ -84,7 +97,9 @@ python -m unittest tests.mods.test_inventory_system      -v  # inventory / equip
 | `test_stats_system.py` | 10 | 58 | HP/stamina/RAM/crit formulas, perks, preset builds, clamping |
 | `test_combat_system.py` | 10 | 53 | Armor mitigation, hits, headshots, crits, status effects, weapon state |
 | `test_inventory_system.py` | 6 | 71 | Inventory CRUD, equipment slots, eddies, street cred, facts, quests |
-| **Total** | **54** | **463** | |
+| `test_rig_visual.py` | 10 | 75 | Rig deformation (bone transforms, body types, deformation rigs, morph targets, visual scale, mesh components, NPC visual scale, body type switching) |
+| `test_visual_verification.py` | 11 | 67 | Visual verification (snapshot capture/diff/compare, SVG skeleton diagrams, glTF 2.0 export, skeleton hierarchy validation) |
+| **Total** | **75** | **605** | |
 
 ---
 
@@ -165,6 +180,42 @@ sim.static_entities.DestroyEntity(prop_id)
 # ── Performance measurement ───────────────────────────────────────────────────
 result, elapsed_ms = sim.timed(lambda: sim.spawn_npc_bulk(100))
 assert elapsed_ms < 1000, f"Spawn 100 NPCs took {elapsed_ms:.1f} ms"
+
+# ── Rig deformation (V body shape mods) ──────────────────────────────────────
+from engine import (BodyType, DeformationRig, BoneTransform, MorphTargetEntry,
+                    VisualSnapshot, generate_skeleton_svg,
+                    generate_skeleton_svg_comparison, export_gltf_json)
+
+# Start with female V
+sim.start_session(player_pos=(0, 0, 0), body_type=BodyType.WomanAverage)
+
+# Create a deformation rig (mirrors community rig-deforming workflow)
+rig = DeformationRig(name="curvy_v", body_type=BodyType.WomanAverage)
+rig.SetBoneScaleSymmetric("Thigh_l", 1.25, 1.0, 1.15)  # both _l and _r
+rig.SetBoneScale("Chest", 1.15, 1.0, 1.1)
+sim.apply_deformation_rig(rig)           # auto-creates FPP variant too
+
+# Apply morph targets and visual scale
+sim.apply_player_morph("BodyFat", "UpperBody", 0.3)
+sim.set_player_visual_scale(1.02, 1.0, 1.02)
+
+# ── Visual verification ──────────────────────────────────────────────────────
+# Snapshot: capture visual state as data, compare before/after
+before = sim.capture_player_snapshot()
+sim.set_player_visual_scale(1.5, 1.0, 1.5)
+after = sim.capture_player_snapshot()
+assert after.differs_from(before)        # proves V changed visually
+diff = after.diff(before)                # structured delta dict
+
+# SVG: 2D wireframe skeleton diagram (green = identity, orange = modified)
+svg = generate_skeleton_svg(rig=rig, title="Curvy V Rig")
+# write_svg(svg, "/tmp/skeleton.svg")   # open in any browser
+
+# SVG comparison: before/after overlay (changed bones highlighted in red)
+svg_cmp = generate_skeleton_svg_comparison(rig_before=None, rig_after=rig)
+
+# glTF: export for 3D viewer (gltf-viewer.donmccurdy.com, Blender, three.js)
+gltf_json = export_gltf_json(rig=rig, output_path="/tmp/skeleton.gltf")
 ```
 
 ---
@@ -387,7 +438,7 @@ The engine maintains these performance bounds (validated by `TestMultiCompanionS
 - UI / ink widget system (ImGui overlay)
 - AI behaviour trees / NPC navigation mesh
 - Physics / raycasting / collision
-- Visual / animation system
+- Visual rendering (SVG diagrams and glTF export provide offline verification)
 - Audio / sound effects
 - File I/O / save system internals
 - Network / multiplayer

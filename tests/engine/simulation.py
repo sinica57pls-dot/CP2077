@@ -14,8 +14,11 @@ v2: Added AMM-facing world systems and stress-test helpers.
 import time as _time
 from typing import List, Optional
 
-from .types import Vector4, Quaternion, EntityID, EInputKey, EInputAction
-from .entity import Entity, PlayerPuppet, NPCPuppet, DynamicEntitySpec
+from .types import Vector4, Vector3, Quaternion, EntityID, EInputKey, EInputAction
+from .entity import (Entity, PlayerPuppet, NPCPuppet, DynamicEntitySpec,
+                     BodyType, DeformationRig, BoneTransform,
+                     MorphTargetEntry, entMorphTargetSkinnedMeshComponent,
+                     entSkinnedMeshComponent, MeshComponent)
 from .systems import (DynamicEntitySystem, DelaySystem, CallbackSystem,
                       SystemRequestsHandler, ScriptableSystemsContainer,
                       KeyInputEvent, GameSessionEvent)
@@ -115,13 +118,15 @@ class GameSimulation:
         gi._reset_globals()
         TweakDB.Reset()
 
-    def start_session(self, player_pos=(0, 0, 0), player_yaw: float = 0):
+    def start_session(self, player_pos=(0, 0, 0), player_yaw: float = 0,
+                       body_type: BodyType = BodyType.WomanAverage):
         self.sys_handler._is_pregame = False
         self.des.OnWorldAttached()
         self.des.OnStreamingWorldLoaded()
         self.player = PlayerPuppet(
             position=Vector4(*player_pos, 0),
             orientation=Quaternion.from_yaw(player_yaw),
+            body_type=body_type,
         )
         gi._current_player = self.player
         return self.player
@@ -247,6 +252,76 @@ class GameSimulation:
             npc.PrefetchAppearanceChange(app_name)
         npc.ScheduleAppearanceChange(app_name)
 
+    # ── Visual / Rig helpers ────────────────────────────────────────────────────
+
+    def set_player_body_type(self, body_type: BodyType):
+        """Switch the player's body type (resets any active deformation rig)."""
+        if self.player:
+            self.player.SetBodyType(body_type)
+
+    def set_player_visual_scale(self, sx: float = 1.0, sy: float = 1.0,
+                                 sz: float = 1.0):
+        """
+        Set the player's visual scale on all body mesh components.
+        Mirrors VisualScaleEx.cpp -- sets visualScale then RefreshAppearance.
+        """
+        if self.player:
+            self.player.SetBodyVisualScale(Vector3(sx, sy, sz))
+
+    def get_player_visual_scale(self) -> Optional[Vector3]:
+        if self.player:
+            return self.player.GetBodyVisualScale()
+        return None
+
+    def apply_deformation_rig(self, rig: DeformationRig,
+                               auto_fpp: bool = True):
+        """
+        Install a deformation rig on the player.
+
+        Mirrors the community rig-deforming workflow:
+          1. Export base body mesh + rig
+          2. Scale bones in Blender
+          3. Inject BoneTransforms back into .rig CR2W
+          4. Install both TPP and FPP rigs
+
+        Args:
+            rig: A DeformationRig with bone scale modifications.
+            auto_fpp: If True, automatically create a player/FPP variant.
+        """
+        if self.player:
+            self.player.SetDeformationRig(rig, auto_fpp=auto_fpp)
+
+    def clear_deformation_rig(self):
+        if self.player:
+            self.player.ClearDeformationRig()
+
+    def apply_player_morph(self, target: str, region: str = "",
+                            value: float = 1.0) -> bool:
+        """Apply a morph target to the player's body morph component."""
+        if self.player:
+            return self.player.ApplyBodyMorphTarget(target, region, value)
+        return False
+
+    def set_npc_visual_scale(self, npc: NPCPuppet,
+                              sx: float = 1.0, sy: float = 1.0,
+                              sz: float = 1.0):
+        """Set visual scale on an NPC's mesh components."""
+        npc.SetVisualScale(Vector3(sx, sy, sz))
+
+    def add_body_mesh_component(self, entity, mesh_path: str = "",
+                                 morph: bool = False):
+        """
+        Add a mesh component to any entity.  Use morph=True for a
+        MorphTargetSkinnedMeshComponent (supports blend shapes).
+        """
+        if morph:
+            comp = entMorphTargetSkinnedMeshComponent()
+        else:
+            comp = entSkinnedMeshComponent()
+        comp._mesh_path = mesh_path
+        entity.AddComponent(comp)
+        return comp
+
     # ── Teleport helpers ──────────────────────────────────────────────────────────
 
     def teleport_entity(self, entity, pos, yaw: float = 0.0):
@@ -346,6 +421,20 @@ class GameSimulation:
         result = fn()
         elapsed_ms = (_time.perf_counter() - t0) * 1000.0
         return result, elapsed_ms
+
+    # ── Visual snapshot helpers ──────────────────────────────────────────────────
+
+    def capture_player_snapshot(self):
+        """Capture the player's current visual state as a VisualSnapshot."""
+        if self.player is None:
+            return None
+        from .visual_snapshot import VisualSnapshot
+        return VisualSnapshot.capture(self.player)
+
+    def capture_npc_snapshot(self, npc):
+        """Capture an NPC's current visual state as a VisualSnapshot."""
+        from .visual_snapshot import VisualSnapshot
+        return VisualSnapshot.capture(npc)
 
     @staticmethod
     def distance(a, b) -> float:
