@@ -3,27 +3,28 @@ RED4 Engine Simulation
 ======================
 
 Offline simulation of Cyberpunk 2077's RED4 engine for testing mods
-without launching the game.  Built from:
-  - Codeware C++ source (src/App/World/DynamicEntitySystem.cpp, etc.)
-  - RedScript API stubs (scripts/World/, scripts/Entity/, etc.)
+without launching the game.
 
-Usage:
-    from engine import GameSimulation, Vector4, Quaternion
-    sim = GameSimulation()
-    sim.start_session(player_pos=(0, 0, 0))
-    npc = sim.spawn_npc(tags=["AMM"], pos=(10, 0, 0))
-    sim.tick(count=4)
-    sim.teardown()
+v2 additions (AMM-focused):
+  - AI system (ai.py)          : commands, roles, attitude agent
+  - Appearance system          : prefetch/schedule, trigger system
+  - World systems (world.py)   : teleport, god mode, static entities,
+                                  workspot, targeting, mappins,
+                                  weather, time, status effects, observers
+  - Optimized DES              : O(1) reverse tag index
+  - Optimized DelaySystem      : heapq replaces O(n^2) list scan
+  - Extended TweakDB           : CloneRecord, SetFlatNoUpdate, Update,
+                                  AMM_Character.* seeded records
 """
 
-# Types
+# ── Value types ────────────────────────────────────────────────────
 from .types import (
     FixedPoint, Vector4, Vector3, Quaternion,
     WorldPosition, WorldTransform, CName, EntityID,
     EInputKey, EInputAction, DelayID,
 )
 
-# Entities
+# ── Entity hierarchy ───────────────────────────────────────────────
 from .entity import (
     IScriptable, IComponent, IVisualComponent,
     MeshComponent, entSkinnedMeshComponent,
@@ -32,7 +33,7 @@ from .entity import (
     PlayerPuppet, NPCPuppet, DynamicEntitySpec,
 )
 
-# Systems
+# ── Core engine systems ────────────────────────────────────────────
 from .systems import (
     DynamicEntitySystem, DelaySystem, DelayCallback,
     CallbackSystem, CallbackSystemHandler, CallbackSystemEvent,
@@ -41,12 +42,86 @@ from .systems import (
     ScriptableSystemsContainer,
 )
 
-# GameInstance facade & globals
+# ── GameInstance facade & globals ──────────────────────────────────
 from .game_instance import (
-    GameInstance, GetPlayer, IsDefined, SqrtF, Cast,
+    GameInstance, GetPlayer, FindEntityByID, IsDefined, SqrtF, Cast,
     Equals, ArraySize, ArrayClear, ArrayPush, ArrayErase,
     NameToString, ModLog, get_log, clear_log,
 )
 
-# Simulation orchestrator
+# ── TweakDB ────────────────────────────────────────────────────────
+from .tweakdb import (
+    TweakDBID, gamedataRecord,
+    gamedataDamageType, gamedataQuality,
+    gamedataWeaponEvolution, gamedataItemType,
+    gamedataCyberwareType, gamedataStatType, gamedataStatPoolType,
+    WeaponRecord, ArmorRecord, CyberwareRecord, PerkRecord, ConsumableRecord,
+    TweakDB,
+)
+
+# ── Stats system ───────────────────────────────────────────────────
+from .stats import (
+    CharacterStats, NPCStats, StatsSystem,
+    StatModifier, StatModifierType, PerkState,
+    preset_early_game_v, preset_netrunner_v,
+    preset_street_samurai_v, preset_gunslinger_v,
+    ATTR_MIN, ATTR_MAX, SKILL_MIN, SKILL_MAX,
+    LEVEL_MIN, LEVEL_MAX,
+)
+
+# ── Inventory system ───────────────────────────────────────────────
+from .inventory import (
+    ItemID, ItemData, EquipmentSlot,
+    TransactionSystem, EquipmentSystem,
+    StreetCredSystem,
+)
+
+# ── Combat / damage system ─────────────────────────────────────────
+from .combat import (
+    HitFlag, HitInstance, DamageSystem,
+    StatusEffectType, StatusEffectInstance, StatusEffectController,
+    WeaponState,
+)
+
+# ── Quest system ───────────────────────────────────────────────────
+from .quests import (
+    FactID, FactManager,
+    QuestNodeType, QuestNodeResult, QuestNode,
+    QuestObjective, ObjectiveStatus, QuestPhase,
+    JournalManager, QuestJournalEntry,
+    QuestSystem,
+)
+
+# ── AI system (NEW) ────────────────────────────────────────────────
+from .ai import (
+    EAIAttitude, AttitudeAgent,
+    AICommandType, AICommand,
+    AIFollowTargetCommand, AITeleportCommand, AIMoveToCommand,
+    AIHoldPositionCommand, AIPlayAnimationCommand, AIPlayVoiceOverCommand,
+    AITriggerCombatCommand,
+    AIFollowerRole, AINoRole, AIRole,
+    AIControllerComponent,
+)
+
+# ── Appearance system (NEW) ────────────────────────────────────────
+from .appearance import (
+    AppearanceRecord, EntityAppearanceDB, AppearanceComponent,
+    AppearanceDatabase, AppearanceTrigger, AppearanceTriggerSystem,
+)
+
+# ── World systems (NEW) ────────────────────────────────────────────
+from .world import (
+    gameGodModeType, GodModeSystem,
+    EulerAngles, TeleportationFacility,
+    StaticEntitySpec, StaticEntity, StaticEntitySystem,
+    WorkspotSystem,
+    TargetingSystem,
+    MappinData, MappinSystem,
+    WeatherID, WeatherSystem,
+    GameTimeSystem,
+    GameplayRestriction, GameplayStatusEffect, GameplayStatusEffectSystem,
+    ObserverRegistry,
+)
+
+# ── Simulation orchestrator ────────────────────────────────────────
 from .simulation import GameSimulation

@@ -8,11 +8,17 @@ Mirrors the entity system from:
   src/App/World/DynamicEntitySpec.hpp  -- Spawn specification
 
 Each class registers its RTTI type names so IsA() works like the real engine.
+
+v2: NPCPuppet and PlayerPuppet now carry AIControllerComponent, AttitudeAgent,
+and AppearanceComponent -- matching the real engine's component model and
+enabling full AMM companion/appearance test coverage.
 """
 
 import math
 from .types import (Vector4, Vector3, Quaternion, WorldTransform,
                     FixedPoint, EntityID, CName)
+from .ai import AIControllerComponent, AttitudeAgent, AINoRole
+from .appearance import AppearanceComponent
 
 
 class IScriptable:
@@ -55,6 +61,8 @@ class MeshComponent(IVisualComponent):
     def __init__(self):
         self.visualScale = Vector3(1, 1, 1)
         self.chunkMask = 0xFFFFFFFFFFFFFFFF
+        self.meshAppearance = CName("")
+        self.LODMode = 0
 
     def GetVisualScale(self):
         return Vector3(self.visualScale.X, self.visualScale.Y, self.visualScale.Z)
@@ -63,6 +71,17 @@ class MeshComponent(IVisualComponent):
         self.visualScale.X = v.X
         self.visualScale.Y = v.Y
         self.visualScale.Z = v.Z
+
+    def Toggle(self, visible: bool):
+        """AMM uses Toggle() to show/hide components."""
+        self._visible = visible
+
+    def TemporaryHide(self, hide: bool):
+        self._temp_hidden = hide
+
+    def ChangeResource(self, mesh_path: str, async_load: bool = True):
+        """AMM swaps mesh resources for custom appearances."""
+        self._mesh_path = mesh_path
 
 
 class entSkinnedMeshComponent(MeshComponent):
@@ -155,15 +174,93 @@ class ScriptedPuppet(gamePuppet):
                               "Entity", "IScriptable"})
 
 
+# ── PlayerPuppet ──────────────────────────────────────────────────────────────
+
 class PlayerPuppet(ScriptedPuppet):
     _type_names = frozenset({"PlayerPuppet", "gamePlayerPuppet",
                               "ScriptedPuppet", "gamePuppet",
                               "GameObject", "Entity", "IScriptable"})
 
+    def __init__(self, entity_id=None, position=None, orientation=None):
+        super().__init__(entity_id=entity_id, position=position,
+                         orientation=orientation)
+        self._attitude_agent = AttitudeAgent()
+        self._attitude_agent.SetAttitudeGroup("PlayerAllies")
+        # Player doesn't have an AI controller but AMM probes attitude agent
+        self._npc_stats = None
+
+    def GetAttitudeAgent(self) -> AttitudeAgent:
+        return self._attitude_agent
+
+
+# ── NPCPuppet ─────────────────────────────────────────────────────────────────
 
 class NPCPuppet(ScriptedPuppet):
+    """
+    Full-featured NPC puppet with AI controller, attitude agent, and
+    appearance component -- matching the real engine's gamePuppet interface.
+
+    AMM interacts with all three:
+      npc.GetAIControllerComponent().SetAIRole(AIFollowerRole.new())
+      npc.GetAttitudeAgent().SetAttitudeGroup("PlayerAllies")
+      npc.GetCurrentAppearanceName()
+      npc.ScheduleAppearanceChange(appName)
+    """
+
     _type_names = frozenset({"NPCPuppet", "ScriptedPuppet", "gamePuppet",
                               "GameObject", "Entity", "IScriptable"})
+
+    def __init__(self, entity_id=None, position=None, orientation=None,
+                 appearance: str = "default"):
+        super().__init__(entity_id=entity_id, position=position,
+                         orientation=orientation)
+        # AMM-facing subsystems
+        self._ai_ctrl      = AIControllerComponent()
+        self._attitude     = AttitudeAgent()
+        self._appearance   = AppearanceComponent(initial=appearance)
+
+        # AMM companion metadata
+        self._is_companion: bool   = False
+        self._mappin_id:    int    = -1   # from MappinSystem
+        self._npc_stats            = None  # NPCStats (optional)
+
+    # ── AI Controller (matches AMM's GetAIControllerComponent() calls) ────────
+
+    def GetAIControllerComponent(self) -> AIControllerComponent:
+        return self._ai_ctrl
+
+    # ── Attitude Agent ────────────────────────────────────────────────────────
+
+    def GetAttitudeAgent(self) -> AttitudeAgent:
+        return self._attitude
+
+    # ── Appearance (matches AMM's direct puppet calls) ────────────────────────
+
+    def GetCurrentAppearanceName(self) -> str:
+        return self._appearance.GetCurrentAppearanceName()
+
+    def PrefetchAppearanceChange(self, app_name: str):
+        self._appearance.PrefetchAppearanceChange(app_name)
+
+    def ScheduleAppearanceChange(self, app_name: str):
+        self._appearance.ScheduleAppearanceChange(app_name)
+
+    def GetAppearanceHistory(self) -> list:
+        return self._appearance.GetChangeHistory()
+
+    # ── Companion helpers (AMM sets/reads these) ──────────────────────────────
+
+    def SetIsCompanion(self, flag: bool):
+        self._is_companion = flag
+
+    def IsCompanion(self) -> bool:
+        return self._is_companion
+
+    def SetMappin(self, mappin_id: int):
+        self._mappin_id = mappin_id
+
+    def GetMappin(self) -> int:
+        return self._mappin_id
 
 
 # ── DynamicEntitySpec ──────────────────────────────────────────────

@@ -260,6 +260,22 @@
   * [Audio in TweakDB](for-mod-creators-theory/tweaks/audio-in-tweakdb.md)
   * [Tweaks: Vehicles](for-mod-creators-theory/tweaks/tweaks-vehicles.md)
 
+## For Mod Creators: Testing
+
+* [RED4 Offline Engine Simulator](tests/README.md) — 463 tests, zero dependencies
+  * [AI Session Guide](tests/AI_CONTEXT.md)
+  * [Quick Start & API Reference](tests/README.md)
+  * [AMM Full Test Suite](tests/mods/test_amm_full.py) — 155 tests, 15 suites
+  * [AMM Companion Close-Follow](tests/mods/test_amm_companion_close.py)
+  * [TweakDB Simulation](tests/engine/tweakdb.py)
+  * [AI Commands & Roles](tests/engine/ai.py)
+  * [Appearance System](tests/engine/appearance.py)
+  * [World Systems (GodMode, Teleport, Props, Weather…)](tests/engine/world.py)
+  * [Stats System](tests/engine/stats.py)
+  * [Combat System](tests/engine/combat.py)
+  * [Inventory System](tests/engine/inventory.py)
+  * [Quest System](tests/engine/quests.py)
+
 ## Modding Guides
 
 * [Getting started: Making mods](modding-guides/getting-started-making-mods.md)
