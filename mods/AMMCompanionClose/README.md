@@ -104,6 +104,7 @@ It scans for entities tagged with common AMM/Codeware tags (`AMM`, `Companion`, 
 
 ## Changelog
 
+- **v1.0.4** -- Fixed critical tag mismatch: AMM uses `AMM_NPC` and `AMM_CAR` tags (confirmed from [AMM source](https://github.com/MaximiliumM/appearancemenumod), spawn.lua lines 522/603), not generic `AMM`/`Companion`. Without this fix the mod would not detect any AMM-spawned entities. Now scans `AMM_NPC`, `AMM_CAR`, `AMM`, and `Companion`.
 - **v1.0.3** -- Fixed degenerate zero-quaternion orientation in `TeleportEntity` (was `(0,0,0,0)` instead of preserving the NPC's live facing via `GetWorldOrientation()`). Fixed teleport placement using full 3D forward vector which could put NPCs underground or mid-air on slopes/anims; now flattened to XY ground plane. Fixed stale `DynamicEntitySystem` wref not being refreshed across session loads.
 - **v1.0.2** -- Fixed fatal compile errors: replaced `FTLog` (doesn't exist in Codeware) with `ModLog`, replaced `EntityID.GetHash` (doesn't exist) with `EntityID.ToHash`. Added pcall crash safety to all game API calls in CET overlay. Added `InvalidateSystem()` cleanup on shutdown.
 - **v1.0.1** -- Replaced brute-force teleport with natural AI movement (sprint/run/walk tiers based on distance). Cancelled follow command when NPC is close enough so they stand still instead of backing away from the player.

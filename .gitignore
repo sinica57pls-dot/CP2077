@@ -12,3 +12,7 @@
 CMakeLists.txt
 
 *.pdf
+
+# Python
+__pycache__/
+*.pyc

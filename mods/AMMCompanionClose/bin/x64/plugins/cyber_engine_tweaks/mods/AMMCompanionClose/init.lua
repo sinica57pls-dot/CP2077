@@ -1,5 +1,5 @@
 --[[
-    AMM Companion Close-Follow v1.0.3  --  CET Integration Layer
+    AMM Companion Close-Follow v1.0.4  --  CET Integration Layer
     =====================================================
 
     This file provides a Cyber Engine Tweaks overlay menu so you can
@@ -8,8 +8,8 @@
 
     It also lets you tweak distance thresholds live from the overlay.
 
-    v1.0.3: Fixed degenerate zero-quaternion orientation, flattened teleport
-    forward vector to XY plane, refreshed DES wref across session loads.
+    v1.0.4: Fixed critical tag mismatch -- AMM uses AMM_NPC/AMM_CAR tags,
+    not AMM/Companion.  Without this fix the mod did nothing with real AMM NPCs.
 
     Requirements:
       - Cyber Engine Tweaks 1.37+
@@ -106,7 +106,7 @@ registerForEvent("onDraw", function()
     ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "They will stick close to you as you move!")
 
     ImGui.Spacing()
-    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Companion Close-Follow v1.0.3")
+    ImGui.TextColored(0.5, 0.5, 0.5, 1.0, "Companion Close-Follow v1.0.4")
 
     ImGui.End()
 end)
@@ -115,7 +115,7 @@ end)
 -- CET lifecycle
 -- -----------------------------------------------------------------------
 registerForEvent("onInit", function()
-    print("[CompanionClose] CET mod loaded. v1.0.3")
+    print("[CompanionClose] CET mod loaded. v1.0.4")
 end)
 
 registerForEvent("onShutdown", function()

@@ -184,11 +184,13 @@ public class CompanionCloseSystem extends ScriptableSystem {
     private func UpdateAllCompanions(playerPos: Vector4, playerFwd: Vector4) -> Void {
         if !IsDefined(this.m_entitySystem) { return; }
 
-        // Default tags that AMM and Codeware commonly use
+        // Real AMM tags (from AMM source: spawn.lua lines 522, 603)
+        this.TryUpdateTag(n"AMM_NPC", playerPos, playerFwd);
+        this.TryUpdateTag(n"AMM_CAR", playerPos, playerFwd);
+
+        // Legacy / Codeware generic tags (for other spawner mods)
         this.TryUpdateTag(n"AMM", playerPos, playerFwd);
-        this.TryUpdateTag(n"amm", playerPos, playerFwd);
         this.TryUpdateTag(n"Companion", playerPos, playerFwd);
-        this.TryUpdateTag(n"companion", playerPos, playerFwd);
 
         // User-registered extra tags from other mods
         let i: Int32 = 0;
