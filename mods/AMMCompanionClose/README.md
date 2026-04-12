@@ -102,6 +102,12 @@ The mod uses Codeware's `ScriptableSystem` to register:
 
 It scans for entities tagged with common AMM/Codeware tags (`AMM`, `Companion`, etc.) and repositions them. It does **not** modify any game files or override any existing AMM behavior -- it's purely additive.
 
+## Changelog
+
+- **v1.0.2** -- Fixed fatal compile errors: replaced `FTLog` (doesn't exist in Codeware) with `ModLog`, replaced `EntityID.GetHash` (doesn't exist) with `EntityID.ToHash`. Added pcall crash safety to all game API calls in CET overlay. Added `InvalidateSystem()` cleanup on shutdown.
+- **v1.0.1** -- Replaced brute-force teleport with natural AI movement (sprint/run/walk tiers based on distance). Cancelled follow command when NPC is close enough so they stand still instead of backing away from the player.
+- **v1.0.0** -- Initial release.
+
 ## License
 
 MIT -- do whatever you want with it.

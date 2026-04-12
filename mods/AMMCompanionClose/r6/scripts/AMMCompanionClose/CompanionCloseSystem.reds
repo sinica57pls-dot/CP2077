@@ -105,7 +105,7 @@ public class CompanionCloseSystem extends ScriptableSystem {
 
         this.m_active = true;
 
-        FTLog("[CompanionClose] System ready. Press F6 to toggle close-follow.");
+        ModLog(n"CompanionClose", "System ready. Press F6 to toggle close-follow.");
     }
 
     // ------------------------------------------------------------------
@@ -118,10 +118,10 @@ public class CompanionCloseSystem extends ScriptableSystem {
         this.m_enabled = !this.m_enabled;
 
         if this.m_enabled {
-            FTLog("[CompanionClose] Close-follow ENABLED");
+            ModLog(n"CompanionClose", "Close-follow ENABLED");
             this.ScheduleTick();
         } else {
-            FTLog("[CompanionClose] Close-follow DISABLED");
+            ModLog(n"CompanionClose", "Close-follow DISABLED");
         }
     }
 
@@ -202,7 +202,7 @@ public class CompanionCloseSystem extends ScriptableSystem {
         while i < ArraySize(entities) {
             let entity: ref<Entity> = entities[i];
             if IsDefined(entity) {
-                let hash: Uint64 = EntityID.GetHash(entity.GetEntityID());
+                let hash: Uint64 = EntityID.ToHash(entity.GetEntityID());
 
                 // Skip if we already processed this entity under a different tag
                 if !this.WasProcessed(hash) {
@@ -307,7 +307,7 @@ public class CompanionCloseSystem extends ScriptableSystem {
 
     public func SetEnabled(enabled: Bool) -> Void {
         if !this.m_active {
-            FTLog("[CompanionClose] System not yet active. Wait until in-game.");
+            ModLog(n"CompanionClose", "System not yet active. Wait until in-game.");
             return;
         }
 
@@ -315,12 +315,12 @@ public class CompanionCloseSystem extends ScriptableSystem {
         this.m_enabled = enabled;
 
         if enabled {
-            FTLog("[CompanionClose] Close-follow ENABLED (via API)");
+            ModLog(n"CompanionClose", "Close-follow ENABLED (via API)");
             if !wasEnabled {
                 this.ScheduleTick();
             }
         } else {
-            FTLog("[CompanionClose] Close-follow DISABLED (via API)");
+            ModLog(n"CompanionClose", "Close-follow DISABLED (via API)");
         }
     }
 
@@ -345,7 +345,7 @@ public class CompanionCloseSystem extends ScriptableSystem {
             i += 1;
         }
         ArrayPush(this.m_extraTags, tag);
-        FTLog("[CompanionClose] Registered extra tag: " + NameToString(tag));
+        ModLog(n"CompanionClose", "Registered extra tag: " + NameToString(tag));
     }
 
     public func UnregisterTag(tag: CName) -> Void {
@@ -353,7 +353,7 @@ public class CompanionCloseSystem extends ScriptableSystem {
         while i < ArraySize(this.m_extraTags) {
             if Equals(this.m_extraTags[i], tag) {
                 ArrayErase(this.m_extraTags, i);
-                FTLog("[CompanionClose] Unregistered extra tag: " + NameToString(tag));
+                ModLog(n"CompanionClose", "Unregistered extra tag: " + NameToString(tag));
                 return;
             }
             i += 1;
