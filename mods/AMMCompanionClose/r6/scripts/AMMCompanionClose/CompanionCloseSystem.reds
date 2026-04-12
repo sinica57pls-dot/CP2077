@@ -103,6 +103,10 @@ public class CompanionCloseSystem extends ScriptableSystem {
         // Skip main menu
         if GameInstance.GetSystemRequestsHandler().IsPreGame() { return; }
 
+        // Re-acquire the DynamicEntitySystem reference.  The wref grabbed in
+        // OnAttach() may have gone stale across session loads.
+        this.m_entitySystem = GameInstance.GetDynamicEntitySystem();
+
         this.m_active = true;
 
         ModLog(n"CompanionClose", "System ready. Press F6 to toggle close-follow.");
@@ -253,10 +257,25 @@ public class CompanionCloseSystem extends ScriptableSystem {
         let targetPos: Vector4;
 
         if dist > teleportDist {
-            // --- TELEPORT --- too far, snap them right behind the player
-            targetPos.X = playerPos.X - playerFwd.X * targetDist;
-            targetPos.Y = playerPos.Y - playerFwd.Y * targetDist;
-            targetPos.Z = playerPos.Z - playerFwd.Z * targetDist;
+            // --- TELEPORT --- too far, snap them right behind the player.
+            // Flatten forward to the XY ground plane so looking up/down
+            // (slopes, vehicle exit, climb anims) doesn't place the NPC
+            // underground or floating in the air.
+            let flatLenSq: Float = playerFwd.X * playerFwd.X + playerFwd.Y * playerFwd.Y;
+            let flatFwdX: Float;
+            let flatFwdY: Float;
+            if flatLenSq > 0.001 {
+                let flatLen: Float = SqrtF(flatLenSq);
+                flatFwdX = playerFwd.X / flatLen;
+                flatFwdY = playerFwd.Y / flatLen;
+            } else {
+                // Looking nearly straight up/down -- fall back to +Y
+                flatFwdX = 0.0;
+                flatFwdY = 1.0;
+            }
+            targetPos.X = playerPos.X - flatFwdX * targetDist;
+            targetPos.Y = playerPos.Y - flatFwdY * targetDist;
+            targetPos.Z = playerPos.Z;  // stay at player's ground level
             targetPos.W = 0.0;
         } else {
             // --- LERP --- smoothly pull them toward the player
@@ -295,8 +314,11 @@ public class CompanionCloseSystem extends ScriptableSystem {
         transform.Position.y = Cast(pos.Y);
         transform.Position.z = Cast(pos.Z);
 
-        // Keep the NPC's current orientation so they don't snap-rotate
-        // (WorldTransform default Orientation is identity quaternion which is fine)
+        // Preserve the NPC's current facing direction.
+        // A default-initialized Quaternion is (0,0,0,0) which is degenerate --
+        // NOT identity (0,0,0,1).  Fetching the entity's live orientation
+        // avoids snap-rotation and visual glitches.
+        transform.Orientation = entity.GetWorldOrientation();
 
         entity.SetWorldTransform(transform);
     }
